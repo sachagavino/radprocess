@@ -5,3 +5,4 @@ from . import plotting
 from . import polaris
 from . import radmc3d
 from . import ramses
+from . import pymses3

@@ -1,0 +1,26 @@
+PyMSES v.4.0.0
+--------------
+Improved GUI
+Some more bug fixes
+
+
+PyMSES v.3.1.0 
+--------------
+Improved GUI
+Added OpenCL possibility for the bottom up OctreeRayTracer
+Some more bug fixes
+
+
+PyMSES v.3.0.0
+--------------
+Second public release of the PyMSES module.
+Added some bug fixes Improved multiprocessing performance
+Added mpi4py ray tracer
+Added RAMSES user defined AMR file formats
+Added the new OctreeRayTracer in the visualisation module
+
+
+PyMSES v.2.1.0
+--------------
+First public release of the PyMSES module.
+Enables the AMRViewer GUI
