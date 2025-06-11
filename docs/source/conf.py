@@ -54,7 +54,7 @@ latex_elements = {
 
 # -- Options for HTML output
 
-html_theme = 'renku'
+html_theme = 'furo'
 #html_theme_path = ["_themes", ]
 
 # Add any paths that contain custom static files (such as style sheets) here,
