@@ -1,4 +1,4 @@
-Nautilus Multi-Grain Code (NMGC), an astrochemistry gas-grain code
+Radprocess is a package meant to help users convert RAMSES output for postprocessing.
 ==============================================================================
 
 
