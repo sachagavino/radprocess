@@ -11,10 +11,10 @@ From a terminal, go to a directory where you want to install the code, and type:
     git clone https://github.com/sachagavino/radprocess.git
 
 
-This will create a folder ``radprocess-1.0/``, which contains the full git repository. You can now access the package::
+This will create a folder ``radprocess/``, which contains the full git repository. You can now access the package::
 
 
-    cd radprocess-1.0/
+    cd radprocess/
 
 
 To make sure you always use the latest version, you can type:: 
@@ -34,10 +34,6 @@ The following softwares are required:
     The GNU Make tool is required to compile the software. In principle, it should already be pre-installed on your machine.
     In case it is not, you can type ``sudo apt-get install make`` if you are working on Linux, or ``brew install make`` regardless of your OS.
 
-#. ``perl``
-
-    Perl is a Unix-friendly scripting language that unable text processing tasks. It is required to copy the executable in the $HOME/bin directory.
-    Note that this requirements will be removed in the next update of radprocess.
 
 #. ``Fortran-90 compiler``
 
