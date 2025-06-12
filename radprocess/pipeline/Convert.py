@@ -2,31 +2,23 @@
 _____________________________________________________________________________________________________________
 file name: Convert
 last update: June 2025
-language: PYTHON 3.8
-short description: read ramses and radmc3d files. 
+language: > PYTHON 3.8
+short description: convert from ramses to radmc3d and polaris. 
 _____________________________________________________________________________________________________________
 """
-from __future__ import absolute_import
-import os, sys, inspect
 import numpy as np
-
-from ..constants.constants import mu, autocm, amu, Ggram, kb, M_sun
-
-currentdir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
-parentdir = os.path.dirname(currentdir)
-sys.path.insert(0,parentdir) 
 
 class Convert:
     def __init__(self):
-        self.test = 1
+        self.test = []
 
-    def update_pymsesrc(self):
+    def update_pymsesrc(self, nb_grains=1, rho=True, vel=True, Br=False):
         self.rat = 1
 
-    def convert2radmc(self):
+    def to_radmc(self, nb_grains=1):
         self.rat2 = 1
 
-    def convert2polaris(self):
+    def to_polaris(self, nb_grains=1):
         self.rat3 = 1
 
     
