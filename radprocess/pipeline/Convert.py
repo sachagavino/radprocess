@@ -7,6 +7,7 @@ short description: convert from ramses to radmc3d and polaris.
 _____________________________________________________________________________________________________________
 """
 import numpy as np
+from .. import pymses3
 
 class Convert:
     def __init__(self):

@@ -3,7 +3,7 @@ import numpy as np
 
 
 from . Pipeline import Pipeline
-# from . Radmc3d import Radmc3d
+from . Radmc3d import Radmc3d
 # from . Polaris import Polaris
 
 

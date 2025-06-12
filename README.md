@@ -1,4 +1,4 @@
-# radprocess Version 1.0
+# radprocess Version 1.0.0
 
 ## Introduction
 Radprocess is a package to help using RAMSES output for postprocessing pipelines for dust temperature and .
