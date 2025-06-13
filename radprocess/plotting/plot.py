@@ -16,7 +16,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
 
-from ..constants.constants import autocm, M_sun, R_sun
+from ..constants.constants import au2cm, M_sun, R_sun
 
 
 

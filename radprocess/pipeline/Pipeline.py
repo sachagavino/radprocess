@@ -3,7 +3,7 @@ import numpy as np
 
 from . Convert import Convert
 
-from ..constants.constants import autocm, M_sun, R_sun
+from ..constants.constants import au2cm, M_sun, R_sun
 
 class Pipeline:
 

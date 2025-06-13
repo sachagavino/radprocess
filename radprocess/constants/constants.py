@@ -45,14 +45,3 @@ N_mass = 2.3258671e-26
 O_mass = 2.6566962e-26
 Si_mass = 4.6637066e-26
 
-
-
-
-
-
-
-#
-# Unit conversion:
-#
-
-
