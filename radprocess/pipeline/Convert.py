@@ -15,7 +15,8 @@ class Convert:
         self.root_directory = os.path.abspath(os.sep)
 
     def update_pymsesrc(self, nb_grains=1, rho=True, vel=False, Bl=False, Br=False, P=False, Xi=False, phi=False, g=False):
-
+        # Initialize the variable i
+        i = 0
         # Define the directory path
         pymses_directory = os.path.join(self.root_directory, ".pymses")
 
