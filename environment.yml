@@ -1,0 +1,9 @@
+name: radprocess
+dependencies:
+  - python==3.10.16
+  - matplotlib==3.10
+  - numpy==1.26.4
+
+
+  
+

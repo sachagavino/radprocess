@@ -4,7 +4,7 @@ Installation of radprocess
 How to obtain radprocess
 =================
 
-radprocess can be obtained by cloning its repository. This is also the best way to keep up-to-date.
+radprocess can be obtained by cloning its repository (soon using pip). This is also the best way to keep up-to-date.
 From a terminal, go to a directory where you want to install the code, and type:: 
 
 
@@ -24,21 +24,27 @@ To make sure you always use the latest version, you can type::
 
 
 
-Requirements
+Requirements and environment
 =================
 
-The following softwares are required:
+Because radprocess (for now) uses specific library versions, it is strongly recommended to use a dedicated virtual environment to avoid conflicts with other packages. You can use ``conda`` to create a virtual environment. 
+The easiest way to do this is to use the provided ``environment.yml`` file. The name of the environment is ``radprocess`` by default, but you can change it in the ``environment.yml`` file before creating the environment.
+From the terminal, type::
 
-#. ``make``
+    conda env create -f environment.yml
 
-    The GNU Make tool is required to compile the software. In principle, it should already be pre-installed on your machine.
-    In case it is not, you can type ``sudo apt-get install make`` if you are working on Linux, or ``brew install make`` regardless of your OS.
+Verify that the environment is created properly::
+
+    conda env list
+
+If the name of the environment appears in the list, it means the environment has been created successfully. 
+
+You can now activate the new environment with::
+
+    conda activate radprocess
 
 
-#. ``Fortran-90 compiler``
 
-    You need a Fortran-90 compiler. The software has been tested with the ``gfortran`` compiler only, but there is no reason it should not be working with the others. Please, make sure you have the latest version
-    of your compiler (gfortran version > 10.3.0). 
 
 
 Running the code
