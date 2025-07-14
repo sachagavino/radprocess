@@ -1,7 +1,7 @@
 # radprocess Version 1.0.0
 
 ## Introduction
-Radprocess is a package to help using RAMSES output for postprocessing pipelines for dust temperature and .
+Radprocess is a pipeline that converts RAMSES output for radiative tranfer postprocessing.
 
 ## User's guide
 It is strongly recommanded to read the installation procedure in the radprocess documentation [here][1].
