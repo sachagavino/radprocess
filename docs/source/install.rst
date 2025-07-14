@@ -44,9 +44,6 @@ You can now activate the new environment with::
     conda activate radprocess
 
 
-
-
-
 Running the code
 =================
 
