@@ -14,25 +14,28 @@ from .. constants.constants import mu, amu
 
 class SizeDistrib:
     
-        def __init__(self, rsingle=1.000e-01 , amin=5.000e-03, amax=1.000e+03, \
-                           nb_sizes=1, d_exp=3.5, rho_m=2.5, dtogas=0.01, cst_norm=7.41e-26, ext_eff=4):
-            self.d_exp = d_exp
+        def __init__(self, ndust=1, amin=5.000e-03, amax=1.000e+03, \
+                           d_exp=3.5, rho_m=2.5, dtogas=0.01, cst_norm=7.41e-26, ext_eff=4):            
+            self.ndust = ndust          # Number of grain size populations
+            self.amin = amin            # Minimum grain size in microns
+            self.amax = amax            # Maximum grain size in microns
+            self.d_exp = d_exp          # Dust size distribution exponent
+            self.rho_m = rho_m          # Density of the dust material in g/cm^3
+            self.dtogas = dtogas        # Dust-to-gas ratio
+            self.cst_norm = cst_norm    # Normalization constant
+
 
 
         def sizes(self):
             """ A)
-            Create an array with min, max, and average value of each interval of grain sizes. 
+            Create an array with interval and averaged size values for each grain population. 
             Returns
             -------
-                Numpy array (amin, amax, average). len(array) = (3, nb_sizes). Units: microns
+                Numpy array (amin, amax, average). len(array) = (3, self.ndust). Units: microns
             """
-            def single_interval(idust, ndust, amin, amax):
-                return 10**(np.log10(amax/amin)*((idust-1)/ndust)+np.log10(amin))
-
-            intervals = np.array([single_interval(idust, ndust, amin, amax) for idust in range(1, ndust+2)])
-            av = np.sqrt(intervals[1:] * intervals[:-1])
-
-            sizes_param =  np.array([intervals, av])
+            intervals = np.logspace(np.log10(self.amin), np.log10(self.amax), self.ndust+1)
+            average = np.sqrt(intervals[1:] * intervals[:-1])
+            sizes_param =  np.array([intervals[:-1], intervals[1:], average])  # intervals[:-1] all but last; intervals[1:] all but first. Provides the averaged, min and max values of all ranges.
 
             return sizes_param
 
@@ -54,7 +57,7 @@ class SizeDistrib:
             return mass
 
         def grainmass_single(self):
-            """ B)
+            """ C)
             Create mass from single grain (rsingle). 
             Returns
             -------
