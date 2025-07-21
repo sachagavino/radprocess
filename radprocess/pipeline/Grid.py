@@ -4,7 +4,7 @@ file name: Grid
 @author: S. Gavino for chemistry codes.
 last update: Jul 2025
 language: PYTHON 3.10
-short description:  class Grid for young stellar objects modeling. 
+short description:  class Grid for both radmc3d and polaris. 
 _____________________________________________________________________________________________________________
 """
 
@@ -20,6 +20,8 @@ class Grid:
         self.isrf = []
         self.dust = []
         self.accretionheating = []
+        self.radmc_grid = []
+        self.polaris_grid = []
 
     def add_star(self, star):
         self.stars.append(star)
@@ -36,8 +38,11 @@ class Grid:
     def add_density(self, density):
         self.density.append(density)
 
-    def add_dustdensity(self, density):
-        self.dustdensity.append(density)
+    def add_radmc_grid(self, radmc_grid):
+        self.radmc_grid.append(radmc_grid)
+
+    def add_polaris_grid(self, polaris_grid):
+        self.polaris_grid.append(polaris_grid)
 
     def add_dust(self, dust):
         self.dust.append(dust)

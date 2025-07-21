@@ -1,13 +1,10 @@
-import numpy as np
-
-
-
 def get_suffix_after_underscore(input_string):
     """Splits a string at the underscore and returns the part after it."""
     return input_string.split('_')[1] if '_' in input_string else None
 
 
 def hydro_file_descriptor(path):
+    """Parses the hydro file descriptor to extract the number of variables, a dictionary of variable names, and the number of dust ratios."""
     filename = path + "hydro_file_descriptor.txt"
     variables = {}
     nvar = 0

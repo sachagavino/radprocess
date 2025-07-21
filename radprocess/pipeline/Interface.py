@@ -1,6 +1,4 @@
 import sys, os, inspect
-import numpy as np
-
 
 from . Pipeline import Pipeline
 
@@ -23,7 +21,7 @@ class Interface(Pipeline):
         super().__init__(*args, **kwargs)
 
         # Store the path to the RAMSES model
-        self.path_to_ramses_model = path_to_ramses_model
+        self.ramses_path = path_to_ramses_model
 
     def set_pymsesrc(self, dustratios=True, rho=True, vel=True, Br=False):
         """
@@ -39,11 +37,11 @@ class Interface(Pipeline):
         Br : bool
             Whether to include the radial magnetic field component.
         """
-        self.pymsesrc = self.convert.update_pymsesrc(rho=rho, vel=vel, Br=Br)
+        self.pymsesrc = self.convert.update_pymsesrc(dustratios=dustratios, rho=rho, vel=vel, Br=Br)
 
-    def do_ramses2radmc(self, nb_grains=1):
-        self.to_radmc = self.convert.to_radmc(nb_grains=nb_grains)
+    def do_ramses2radmc(self):
+        self.grid.add_radmc_grid(self.convert.to_radmc(self.ramses_path))
 
 
-    def do_ramses2polaris(self, nb_grains=1):
-        self.to_polaris = self.convert.to_polaris(nb_grains=nb_grains)
+    def do_ramses2polaris(self):
+        self.grid.add_polaris_grid(self.convert.to_polaris(self.ramses_path))

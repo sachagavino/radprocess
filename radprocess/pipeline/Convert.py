@@ -14,15 +14,14 @@ from .. import ramses
 
 class Convert:
     def __init__(self):
-        self.root_directory = os.path.expanduser("~")
-        self.nvar = ramses.read.hydro_file_descriptor(self.root_directory)[0]
-        self.ndust = ramses.read.hydro_file_descriptor(self.root_directory)[1]
 
-    def update_pymsesrc(self, nb_grains=1, rho=True, vel=False, Bl=False, Br=False, P=False, Xi=False, phi=False, g=False):
+        self.nvar = ramses.read.hydro_file_descriptor(self.path_to_ramses_model)[0]
+        self.ndust = ramses.read.hydro_file_descriptor(self.path_to_ramses_model)[2]
+
+    def update_pymsesrc(self, dustratios=True, rho=True, vel=True, Bl=False, Br=False, P=False, Xi=False, phi=False, g=False):
         # Initialize the variable i
         i = 0
-        # Define the directory path
-        
+        # Define the pymsesrc path
         pymses_directory = os.path.join(self.root_directory, ".pymses")
         
         # Check if the directory exists, and create it if it doesn't
@@ -43,10 +42,11 @@ class Convert:
         f.write('        "amr_field_descr": [\n')
         if (rho==True):
              f.write('            {"__type__": "scalar_field", "__file_type__": "hydro", "name": "rho", "ivar": 0}')
-        while i < nb_grains:
-            f.write(',\n')
-            f.write('            {"__type__": "scalar_field", "__file_type__": "hydro", "name": "dustratio%d", "ivar": %d}' % (i+1, i+11))
-            i += 1
+        if (dustratios==True):
+            while i < self.ndust:
+                f.write(',\n')
+                f.write('            {"__type__": "scalar_field", "__file_type__": "hydro", "name": "dustratio%d", "ivar": %d}' % (i+1, i+11))
+                i += 1
         if (vel==True):
             f.write(',\n')
             f.write('            {"__type__": "vector_field", "__file_type__": "hydro", "name": "vel", "ivars": [1, 2, 3]}')
@@ -75,10 +75,22 @@ class Convert:
         f.close()
 
 
-    def to_radmc(self, nb_grains=1):
-        self.rat2 = 1
+    def to_radmc(self):
+        CLR_LINE =   "                                                      \r"
+        cell_counter = 0
+        fields = []
+        i = 0
+        if rho == True:
+            fields.append('rho')
+        if self.ndust > 0:
+            while i < self.ndust:
+                fields.append("dustratio%d" % (i+1))
+                i += 1
+        #snap = pymses3.RamsesOutput(folder,num)
+        #amr = snap.amr_source(fields)
+        
 
-    def to_polaris(self, nb_grains=1):
+    def to_polaris(self):
         self.rat3 = 1
 
     
