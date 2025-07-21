@@ -1,0 +1,57 @@
+"""
+_____________________________________________________________________________________________________________
+file name: Grid
+@author: S. Gavino for chemistry codes.
+last update: Jul 2025
+language: PYTHON 3.10
+short description:  class Grid for young stellar objects modeling. 
+_____________________________________________________________________________________________________________
+"""
+
+import numpy as np
+
+class Grid:
+    def __init__(self):
+        self.density = []
+        self.dustdensity = []
+        self.temperature = []
+        self.localfield = []
+        self.stars = []
+        self.isrf = []
+        self.dust = []
+        self.accretionheating = []
+
+    def add_star(self, star):
+        self.stars.append(star)
+
+    def add_isrf(self, isrf):
+        self.isrf.append(isrf)
+
+    def add_temperature(self, temperature):
+        self.temperature.append(temperature)
+
+    def add_localfield(self, localfield):
+        self.localfield.append(localfield)
+
+    def add_density(self, density):
+        self.density.append(density)
+
+    def add_dustdensity(self, density):
+        self.dustdensity.append(density)
+
+    def add_dust(self, dust):
+        self.dust.append(dust)
+
+    def set_wavelength_grid(self, lmin, lmax, nlam, log=False): #microns
+        if log:
+            self.lam = np.logspace(np.log10(lmin), np.log10(lmax), \
+                    nlam)
+        else:
+            self.lam = np.linspace(lmin, lmax, nlam)
+
+    def set_mcmonowavelength_grid(self, lmin, lmax, nlam, log=False):
+        if log:
+            self.monolam = np.logspace(np.log10(lmin), np.log10(lmax), \
+                    nlam)
+        else:
+            self.monolam = np.linspace(lmin, lmax, nlam)

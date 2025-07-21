@@ -5,5 +5,5 @@ from . import camera_wavelength_micron
 from . import dustkappa
 from . import dustopac
 from . import radmc3d
-from . import star
+from . import stars
 from . import wavelength_micron

@@ -4,7 +4,7 @@
 #       "This file is only needed if you want to create a spectrum at a special set of wavelengths (otherwise use radmc3d sed)."
 
 import os
-import astropy.units as u
+
 
 def camera_wavelength_micron(wave = [900, 1300, 3100]):
     os.system('rm -rf camera_wavelength_micron.inp')
