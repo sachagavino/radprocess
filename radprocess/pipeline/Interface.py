@@ -45,3 +45,6 @@ class Interface(Pipeline):
 
     def do_ramses2polaris(self):
         self.grid.add_polaris_grid(self.convert.to_polaris(self.ramses_path))
+
+    def do_radmc2polaris(self):
+        self.grid.add_convert_grid(self.convert.radmc_to_polaris(self.ramses_path))
