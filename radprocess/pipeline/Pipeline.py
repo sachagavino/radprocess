@@ -50,3 +50,6 @@ class Pipeline:
 
         if write_control==True:
             radmc3d.write.control(**keywords)
+
+    def write_radmc3d(self):
+        pass
