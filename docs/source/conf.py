@@ -21,7 +21,7 @@ import datetime
 # -- Project information
 
 project = 'radprocess'
-copyright = '{0}, {1}'.format(datetime.datetime.now().year, 'Sacha Gavino')
+copyright = '{0}, {1}'.format(datetime.datetime.now().year)
 authors = 'Sacha Gavino'
 
 # The full version, including alpha/beta/rc tags
