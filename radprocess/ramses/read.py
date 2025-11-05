@@ -1,6 +1,8 @@
-def get_suffix_after_underscore(input_string):
+from radprocess.utils.ramsesinfo import SinkInfo
+
+def get_snapshot_number(input_string):
     """Splits a string at the underscore and returns the part after it."""
-    return input_string.split('_')[1] if '_' in input_string else None
+    return input_string.split('_')[-1].split('/')[0] if '_' in input_string else None
 
 
 def hydro_file_descriptor(path):
@@ -28,24 +30,30 @@ def hydro_file_descriptor(path):
 
 def sink_info(path):
     """Parses the sink file to extract the number of sinks and a dictionary of column names and values."""
-
-    model_nb = get_suffix_after_underscore(path)
+    
+    model_nb = get_snapshot_number(path)
     filename = "sink_" + model_nb + ".info"
 
-    with open(path, 'r') as file:
+    with open(path+filename, 'r') as file:
         lines = file.readlines()
 
     # Extract the number of sinks from line 1
     num_sinks = int(lines[0].split('=')[1].strip())
 
     # Extract column names from line 3
-    column_names = lines[3].split()
+    column_names = lines[2].split()
 
     # Extract values from line 5
-    values = lines[5].split()
+    values = lines[4].split()
 
     # Create a dictionary mapping column names to their respective values
     sink_data = {column_names[i]: values[i] for i in range(len(column_names))}
 
-    return num_sinks, sink_data
+    #return num_sinks, column_names, sink_data
+
+    return SinkInfo(
+        columns=column_names,
+        rows=[sink_data],  # list of one row
+        num_sinks=num_sinks
+    )
 

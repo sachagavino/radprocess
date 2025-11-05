@@ -1,43 +1,66 @@
-import sys, os, inspect
+import sys
+import os
+import inspect
 
-from . Pipeline import Pipeline
+from radprocess.pipeline.Pipeline import Pipeline
+from radprocess import pymses3
+from radprocess import radmc3d
+from radprocess import ramses
+#from radprocess.utils.config import ConfigParams
+from radprocess.ramses.read import sink_info
 
-currentdir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
-parentdir = os.path.dirname(currentdir)
-sys.path.insert(0,parentdir) 
+# currentdir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
+# parentdir = os.path.dirname(currentdir)
+# sys.path.insert(0,parentdir) 
 
 
 class Interface(Pipeline):
-    def __init__(self, path_to_ramses_model, *args, **kwargs):
+    # def __init__(self, *args, **kwargs):
+    #     """
+    #     Initialize the Interface class.
+    #     Parameters:
+    #     -----------
+    #     path_to_ramses_model : str
+    #         Path to the RAMSES model.
+    #     *args, **kwargs : Additional arguments for the Pipeline class.
+    #     """
+    #     # Initialize the parent class (Pipeline)
+    #     super().__init__(*args, **kwargs)
+
+    #     #self.configparams = ConfigParams()
+    #     #self.sinkinfo = sink_info(self.configparams.inout.)
+    #     #self.io_params = self.configparams.inout
+    #     #self.sim_params = self.configparams.sim
+
+    @property
+    def sinkinfo(self):
         """
-        Initialize the Interface class.
+        Read RAMSES informations.
         Parameters:
         -----------
-        path_to_ramses_model : str
-            Path to the RAMSES model.
-        *args, **kwargs : Additional arguments for the Pipeline class.
         """
-        # Initialize the parent class (Pipeline)
-        super().__init__(*args, **kwargs)
+        path = self.configparams.inout.ramses_output_dir
+        return sink_info(path)
+        #self.sinkinfo = sink_info(self.configparams.inout.ramses_output_dir)  
 
-        # Store the path to the RAMSES model
-        self.ramses_path = path_to_ramses_model
-
-    def set_pymsesrc(self, dustratios=True, rho=True, vel=True, Br=False):
+    def set_pymsesrc(self):
         """
         Set the pymsesrc file for the RAMSES data.
         Parameters:
         -----------
-        dustratios : bool
-            Whether to include the dust ratios field.
-        rho : bool
-            Whether to include the density field.
-        vel : bool
-            Whether to include the velocity field.
-        Br : bool
-            Whether to include the radial magnetic field component.
         """
-        self.pymsesrc = self.convert.update_pymsesrc(dustratios=dustratios, rho=rho, vel=vel, Br=Br)
+        ndust = ramses.read.hydro_file_descriptor(self.configparams.inout.ramses_output_dir)[2]
+        self.pymsesrc = self.convert.update_pymsesrc(ndust = ndust,
+                                                     rho=True,
+                                                     dustratios=self.configparams.pymsesrc.dustratios, 
+                                                     vel=self.configparams.pymsesrc.vel, 
+                                                     bl=self.configparams.pymsesrc.bl,
+                                                     br=self.configparams.pymsesrc.br,
+                                                     p=self.configparams.pymsesrc.p,
+                                                     xi=self.configparams.pymsesrc.xi,
+                                                     phi=self.configparams.pymsesrc.phi,
+                                                     g=self.configparams.pymsesrc.g,
+                                                    )
 
     def do_ramses2radmc(self):
         self.grid.add_radmc_grid(self.convert.to_radmc(self.ramses_path))
