@@ -2,6 +2,8 @@ from dataclasses import dataclass, fields, is_dataclass, field
 import html
 from typing import Literal, Any
 
+import numpy as np
+
 
 # =======================================================
 # Utility: scientific number formatting
@@ -57,7 +59,7 @@ def html_table_from_columns(columns, rows, title="Table"):
         body_rows += f"<tr>{cells}</tr>\n"
 
     return f"""
-    <details style="margin:8px 0; padding:6px; border:1px solid #ccc; border-radius:6px;" open>
+    <details style="margin:8px 0; padding:6px; border:1px solid #ccc; border-radius:6px;">
       <summary style="font-size:16px; font-weight:bold; cursor:pointer;">{title}</summary>
       <div style="padding:10px;">
 
@@ -88,9 +90,10 @@ def html_table_from_columns(columns, rows, title="Table"):
 # =======================================================
 @dataclass
 class SinkInfo:
-    columns: list      # list of strings
-    rows: list         # list of dicts OR list of lists
-    num_sinks: int     # number of sinks parsed
+    columns: list
+    rows: list          # string-based rows (from .info)
+    num_sinks: int
+    data: np.ndarray    # numeric data from CSV
 
     def _repr_html_(self):
         title = f"Sink File ({self.num_sinks} sink{'s' if self.num_sinks != 1 else ''})"

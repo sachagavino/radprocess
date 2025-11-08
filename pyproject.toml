@@ -4,5 +4,7 @@ build-backend = "flit_core.buildapi"
 
 [project]
 name = "radprocess"
+description = "A package that runs postprocessing of MHD simulations using multi-grain models."
+readme = "README.md"
 authors = [{name = "Sacha Gavino", email = "sacha.gavino@unibo.it"}]
-dynamic = ["version", "description"]
+dynamic = ["version"]

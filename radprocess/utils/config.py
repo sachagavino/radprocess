@@ -224,8 +224,20 @@ class Pymsesrc:
 
 @dataclass
 class Sim:
-    size_hole_au: float = field(default=4, 
+    size_hole_au: float = field(default=4., 
         metadata={'desc': r'[AU] Size of the central hole to exclude around the star.'})
+    dtogas: float = field(default=0.01, 
+        metadata={'desc': r'Dust-to-gas mass ratio. Uused only if multi_grain_mode==False or if no dust ratios exist in RAMSES output.'})
+    facc: float = field(default=0.1, 
+        metadata={'desc': r' Accretion fraction converted into radiation. Change at your own risk!'})
+    use_ramses_T: bool = field(default=True, 
+        metadata={'desc': r' Use RAMSES stellar temperature field(s) directly (if available) to create the star(s) file in RT simulations.'})
+    use_ramses_acc_rate: bool = field(default=True, 
+        metadata={'desc': r' Use RAMSES accretion rate field(s) directly (if available) to create the star(s) file in RT simulations.'})
+    use_multi_grain: bool = field(default=True, 
+        metadata={'desc': r'Do RT with multiple bins if True (if RAMSES output has multiple bins). If False, then dust density is computed using dtogas*rho.'})
+
+
 
     def __repr__(self):  # terminal
         return fancy_repr(self)

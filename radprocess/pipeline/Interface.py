@@ -3,7 +3,7 @@ import os
 import inspect
 
 from radprocess.pipeline.Pipeline import Pipeline
-from radprocess import pymses3
+#from radprocess import pymses
 from radprocess import radmc3d
 from radprocess import ramses
 #from radprocess.utils.config import ConfigParams
@@ -35,36 +35,27 @@ class Interface(Pipeline):
     @property
     def sinkinfo(self):
         """
-        Read RAMSES informations.
-        Parameters:
-        -----------
+        Load the sink_XXXXX.info file from the RAMSES output directory.
         """
+
+        # 1) Get directory from config
         path = self.configparams.inout.ramses_output_dir
+
+        # Ensure trailing slash
+        if not path.endswith("/"):
+            path += "/"
+
+        # Check RAMSES directory
+        if not os.path.isdir(path):
+            raise FileNotFoundError(
+                f"RAMSES directory not found:\n    {path}\n"
+                f"Please update: model.configparams.inout.ramses_output_dir"
+            )
         return sink_info(path)
         #self.sinkinfo = sink_info(self.configparams.inout.ramses_output_dir)  
 
-    def set_pymsesrc(self):
-        """
-        Set the pymsesrc file for the RAMSES data.
-        Parameters:
-        -----------
-        """
-        ndust = ramses.read.hydro_file_descriptor(self.configparams.inout.ramses_output_dir)[2]
-        self.pymsesrc = self.convert.update_pymsesrc(ndust = ndust,
-                                                     rho=True,
-                                                     dustratios=self.configparams.pymsesrc.dustratios, 
-                                                     vel=self.configparams.pymsesrc.vel, 
-                                                     bl=self.configparams.pymsesrc.bl,
-                                                     br=self.configparams.pymsesrc.br,
-                                                     p=self.configparams.pymsesrc.p,
-                                                     xi=self.configparams.pymsesrc.xi,
-                                                     phi=self.configparams.pymsesrc.phi,
-                                                     g=self.configparams.pymsesrc.g,
-                                                    )
-
     def do_ramses2radmc(self):
         self.grid.add_radmc_grid(self.convert.to_radmc(self.ramses_path))
-
 
     def do_ramses2polaris(self):
         self.grid.add_polaris_grid(self.convert.to_polaris(self.ramses_path))

@@ -1,0 +1,38 @@
+INSTALLATION INSTRUCTIONS
+=========================
+
+0. If you use the developer version, you need to generate the cython files first
+
+   $ make cython
+
+1. Build the compiled modules
+
+You can either do:
+
+   $ make
+
+to perform an inplace build with default compiler settings, or
+
+   $ python setup.py
+
+to use the interactive distutil build utility (e.g. to customize the compiler
+settings). Choose option 3, inplace build.
+
+2. Ensure the root PyMSES directory is in your $PYTHONPATH
+
+3 (optional). Test the installation and code using
+
+   $ make test
+
+
+Notes for Apple MAC OS X users
+==============================
+
+src/fio.c source file require a 'byteswap.h' library to read RAMSES Fortran90
+binary format and this lib might be unavailable in your distribution.
+
+1. Try to replace the import type #include <byteswap.h> by #include "byteswap.h" in src/fio.c
+
+2. Additional informations :
+- You may locate such a 'byteswap.h' lib in your distribution: just copy it into the src/ directory
+- Or you can dowload it, see the fink page : http://pdb.finkproject.org/pdb/package.php/byteswap-dev

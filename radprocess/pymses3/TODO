@@ -1,0 +1,26 @@
+CODE
+	* make it possible to interchangeably give a field name, e.g. "rho", and a
+	  func, e.g. lambda dset: dset["rho"] to functions which need a field func
+
+	* give Sources some knowledge of the nature of the dataset, of the fields,
+	  etc...
+
+	* add classes for binning, amr2cube, etc, to be built and called from the
+	  helper functions, which properly manage multiple fields in one go, e.g.
+      with an add_field method:
+
+		foo = CylProfileBinner(source, ...)
+		foo.add_field("mass")
+		foo.add_field("epoch")
+		foo.add_field(lambda x: x["mass"]**2)
+		res_dict = foo.compute()
+
+TOFIX
+	* make python-tables an optional dep in datasets.py
+
+PACKAGING
+	* license
+
+DOCUMENTATION
+	* cookbook
+	* examples

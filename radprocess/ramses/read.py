@@ -1,3 +1,7 @@
+import os
+
+import numpy as np
+
 from radprocess.utils.ramsesinfo import SinkInfo
 
 def get_snapshot_number(input_string):
@@ -6,54 +10,108 @@ def get_snapshot_number(input_string):
 
 
 def hydro_file_descriptor(path):
-    """Parses the hydro file descriptor to extract the number of variables, a dictionary of variable names, and the number of dust ratios."""
+    """
+    Parse the RAMSES hydro_file_descriptor.txt file.
+
+    Returns:
+        nvar (int) : total number of hydro variables
+        variables (dict): {index: variable_name}
+        nb_dust_ratios (int): number of dust ratio variables
+
+    Raises:
+        FileNotFoundError: if the file does not exist
+    """
+
+    # Ensure path ends with slash
+    if not path.endswith("/"):
+        path = path + "/"
+
     filename = path + "hydro_file_descriptor.txt"
+
+    #  Check that the file exists
+    if not os.path.isfile(filename):
+        raise FileNotFoundError(
+            f"hydro_file_descriptor.txt not found in: {path}\n"
+            f"Please, check that the RAMSES directory is correct."
+        )
+
     variables = {}
     nvar = 0
 
+    #  Read and parse the file
+    try:
+        with open(filename, "r") as f:
+            for line in f:
+                line = line.strip()
 
-    with open(filename, "r") as f:
-        for line in f:
-            line = line.strip()
-            if line.startswith("nvar"):
-                nvar = int(line.split('=')[1].strip())
-            elif line.startswith("variable"):
-                parts = line.split(":")
-                index = int(parts[0].split("#")[1].strip())
-                name = parts[1].strip()
-                variables[index] = name
+                if line.startswith("nvar"):
+                    nvar = int(line.split("=")[1].strip())
 
-    nb_dust_ratios = sum(1 for name in variables.values() if "dust_ratio" in name) #count the number of dust ratios
+                elif line.startswith("variable"):
+                    parts = line.split(":")
+                    index = int(parts[0].split("#")[1].strip())
+                    name = parts[1].strip()
+                    variables[index] = name
+
+    except Exception as e:
+        raise RuntimeError(
+            f"Error while reading {filename}:\n{e}\n"
+            "Please, check the file hydro_file_descriptor.txt."
+        )
+
+    #  Count dust ratios
+    nb_dust_ratios = sum("dust_ratio" in name for name in variables.values())
 
     return nvar, variables, nb_dust_ratios
 
 
 def sink_info(path):
-    """Parses the sink file to extract the number of sinks and a dictionary of column names and values."""
+    """Parses the sink file to extract information about sinks."""
     
     model_nb = get_snapshot_number(path)
-    filename = "sink_" + model_nb + ".info"
+    filename = f"sink_{model_nb}.info"
+    filename2 = f"sink_{model_nb}.csv"
+    filepath = path + filename
+    filepath2 = path + filename2
 
-    with open(path+filename, 'r') as file:
+    with open(filepath, 'r') as file:
         lines = file.readlines()
 
     # Extract the number of sinks from line 1
     num_sinks = int(lines[0].split('=')[1].strip())
 
-    # Extract column names from line 3
-    column_names = lines[2].split()
+    # --- Column names on line 3 (index 2) ---
+    column_sinks = lines[2].split()
 
-    # Extract values from line 5
-    values = lines[4].split()
+    sinks = np.loadtxt(filepath2, delimiter=',')
 
-    # Create a dictionary mapping column names to their respective values
-    sink_data = {column_names[i]: values[i] for i in range(len(column_names))}
+    rows = []
 
-    #return num_sinks, column_names, sink_data
+    # --- Parse all sink entries ---
+    # sink lines start at line 4 (index 4) and end before last separator line
+    for line in lines[4:]:
+        line = line.strip()
+
+        # stop before the last line of ====== separator
+        if line.startswith("===="):
+            break
+
+        if not line:
+            continue
+
+        parts = line.split()
+        if len(parts) != len(column_sinks):
+            # Some sink lines may include ******** fields → still readable
+            # Ensure alignment by trimming or padding
+            parts = parts[:len(column_sinks)]
+
+        rows.append({column_sinks[i]: parts[i] for i in range(len(column_sinks))})
+
 
     return SinkInfo(
-        columns=column_names,
-        rows=[sink_data],  # list of one row
-        num_sinks=num_sinks
+        columns=column_sinks,
+        rows=rows,  # list of one row
+        num_sinks=num_sinks,
+        data=sinks
     )
 

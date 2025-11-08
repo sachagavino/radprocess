@@ -3,6 +3,7 @@ import os
 from radprocess.pipeline.Grid import Grid
 from radprocess.pipeline.Convert import Convert
 from radprocess import radmc3d
+from radprocess import ramses
 from radprocess.utils.config import ConfigParams
 
 from radprocess.constants.constants import au2cm, M_sun, R_sun
@@ -14,6 +15,33 @@ class Pipeline:
         self.grid = Grid()
         self.configparams = ConfigParams()
         
+
+    def set_pymsesrc(self):
+        """
+        Write ~/.pymses/pymsesrc based on current configuration,
+        then return the Pymsesrc object so Jupyter displays it.
+        """
+        ndust = ramses.read.hydro_file_descriptor(
+            self.configparams.inout.ramses_output_dir
+        )[2]
+        print(f'there is {ndust} dust species in the RAMSES simulation.')  
+        # Write the file
+        ramses.write.pymsesrc(self,
+            ndust=ndust,
+            rho=True,
+            dustratios=self.configparams.pymsesrc.dustratios,
+            vel=self.configparams.pymsesrc.vel,
+            bl=self.configparams.pymsesrc.bl,
+            br=self.configparams.pymsesrc.br,
+            p=self.configparams.pymsesrc.p,
+            xi=self.configparams.pymsesrc.xi,
+            phi=self.configparams.pymsesrc.phi,
+            g=self.configparams.pymsesrc.g,
+        )
+
+        # RETURN Pymsesrc config block → Jupyter displays it
+        return self.configparams.pymsesrc
+
         
     def thermal_radmc3d(self,
                         run=True, 
