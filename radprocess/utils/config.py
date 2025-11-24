@@ -1,48 +1,6 @@
 from dataclasses import dataclass, fields, is_dataclass, field
 #from pydantic import BaseModel, Field
 import html
-from typing import Literal, Any
-import ipywidgets as widgets
-from IPython.display import display 
-
-
-def interactive_config(dataclass_obj):
-    widgets_dict = {}
-
-    for f in fields(dataclass_obj):
-        val = getattr(dataclass_obj, f.name)
-        typ = f.type
-
-        # Boolean -> Checkbox
-        if typ is bool:
-            w = widgets.Checkbox(value=val, description=f.name)
-
-        # Integer -> IntText
-        elif typ is int:
-            w = widgets.IntText(value=val, description=f.name)
-
-        # Float -> FloatText
-        elif typ is float:
-            w = widgets.FloatText(value=val, description=f.name)
-
-        # String -> Text input
-        elif typ is str:
-            w = widgets.Text(value=val, description=f.name)
-
-        # Fallback
-        else:
-            w = widgets.Text(value=str(val), description=f"{f.name} (untyped)")
-
-        def make_handler(field_name, widget):
-            def handler(change):
-                setattr(dataclass_obj, field_name, change["new"])
-            return handler
-
-        w.observe(make_handler(f.name, w), "value")
-        widgets_dict[f.name] = w
-
-    box = widgets.VBox(list(widgets_dict.values()))
-    display(box)
 
 
 def validate_type(obj, field_name, value):
@@ -302,15 +260,15 @@ class Pymsesrc(StrictDataclass):
 @dataclass
 class Sim(StrictDataclass):
     size_hole_au: float = field(default=4., 
-        metadata={'desc': r'[AU] Size of the central hole to exclude around the star.'})
+        metadata={'desc': r'[AU] Size of the central hole to exctrude around the sinks.'})
     dtogas: float = field(default=0.01, 
-        metadata={'desc': r'Dust-to-gas mass ratio. Uused only if multi_grain_mode==False or if no dust ratios exist in RAMSES output.'})
+        metadata={'desc': r'Dust-to-gas mass ratio. Used only if this is not multi-grain mode or if no dust ratios exist in RAMSES output.'})
     facc: float = field(default=0.1, 
         metadata={'desc': r' Accretion fraction converted into radiation. Change at your own risk!'})
     use_ramses_T: bool = field(default=True, 
-        metadata={'desc': r' Use RAMSES stellar temperature field(s) directly (if available) to create the star(s) file in RT simulations.'})
+        metadata={'desc': r' Use RAMSES stellar temperatures (if available in sink info) as stellar inputs for the RT simulations.'})
     use_ramses_acc_rate: bool = field(default=True, 
-        metadata={'desc': r' Use RAMSES retion rate field(s) directly (if available) to create the star(s) file in RT simulations.'})
+        metadata={'desc': r' Use RAMSES accretion rates (if available in sink info) to derive stellar radii for the RT simulations.'})
     use_multi_grain: bool = field(default=True, 
         metadata={'desc': r'Do RT with multiple bins if True (if RAMSES output has multiple bins). If False, then dust density is computed using dtogas*rho.'})
 

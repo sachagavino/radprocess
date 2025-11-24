@@ -1,7 +1,11 @@
 import os
+import inspect
+from dataclasses import fields
+
 import base64
 import gradio as gr
 from gradio import Dropdown
+
 from radprocess.utils.config import ConfigParams
 from radprocess.pipeline.Pipeline import Pipeline
 from radprocess.plotting.plot import plot_sink_columns
@@ -193,23 +197,24 @@ def launch_interface():
         sink_data_state = gr.State()
         sink_columns_state = gr.State()  # To store column names
 
-        # ---------- Sink plots row ----------
+        # ---------- Second row ----------
         with gr.Row():
             with gr.Column(scale=3):
                 with gr.Tabs() as plot_tabs:
-                    with gr.Tab("Sink plots"):
+
+                    # ----------------- Existing Plot Tab -----------------
+                    with gr.Tab("Plot sinks"):
                         # Dropdowns first
                         x_dropdown = gr.Dropdown(choices=[], label="X Column", allow_custom_value=True)
                         y_dropdown = gr.Dropdown(choices=[], label="Y Column", allow_custom_value=True)
-                        
+
                         # Plot button below dropdowns
-                        plot_button = gr.Button("Plot", variant="primary")
-                        
+                        plot_button = gr.Button("Plot", variant="secondary")
+
                         # Plot output
                         plot_output = gr.Plot()
 
                         def generate_sink_plot(sink_rows, x_col, y_col):
-
                             if not sink_rows or not x_col or not y_col:
                                 return None
                             fig = plot_sink_columns(sink_rows, x_col, y_col)
@@ -220,6 +225,93 @@ def launch_interface():
                             inputs=[sink_data_state, x_dropdown, y_dropdown],
                             outputs=[plot_output]
                         )
+
+                    # ----------------- NEW EMPTY TABS -----------------
+                    with gr.Tab("Update pymsesrc"):
+                        gr.Markdown("*(This tab will be used to configure parameter set A.)*")
+
+                    with gr.Tab("Update Parameters"):
+
+                        # --- Build dynamic UI based on Sim dataclass ---
+                        sim_fields = fields(cfg.sim)
+
+                        # Use an ordered list to keep stable mapping between fields and values
+                        sim_widget_keys = []
+                        sim_widgets = []
+
+                        gr.Markdown("### Simulation Parameters")
+
+                        for f in sim_fields:
+                            f_name = f.name
+                            f_type = f.type
+                            f_default = getattr(cfg.sim, f_name)
+                            f_desc = f.metadata.get("desc", "")
+
+                            sim_widget_keys.append(f_name)
+
+                            # Boolean -> Checkbox (nice native widget)
+                            if f_type == bool:
+                                widget = gr.Checkbox(label=f"{f_desc}", value=f_default)
+
+                            # Numeric -> Number
+                            elif f_type in (int, float):
+                                # gr.Number supports both int/float; keep value as f_default
+                                widget = gr.Number(label=f"{f_desc}", value=f_default)
+
+                            else:
+                                # Fallback: text field (string/untyped)
+                                widget = gr.Textbox(label=f"{f_desc}", value=str(f_default))
+
+                            sim_widgets.append(widget)
+
+                        # Status output and Update button
+                        update_sim_button = gr.Button("Update", variant="primary")
+                        sim_update_status = gr.Textbox(label="Update Status", value="No updates yet.", lines=2)
+
+                        # Wrapper that receives positional args in the same order as sim_widgets list
+                        def update_sim_params_wrapper(*values):
+                            """
+                            values is a tuple with one element per widget in sim_widgets,
+                            in the same order as sim_widget_keys.
+                            """
+                            global cfg, pipe
+                            # Map values to field names and set attributes (StrictDataclass will validate)
+                            for key, val in zip(sim_widget_keys, values):
+                                # Convert Textbox fallback strings to original type if needed
+                                f_decl = next(ff for ff in sim_fields if ff.name == key)
+                                expected = f_decl.type
+                                try:
+                                    if expected is bool:
+                                        # Checkbox already returns bool
+                                        setattr(cfg.sim, key, bool(val))
+                                    elif expected is int:
+                                        setattr(cfg.sim, key, int(val))
+                                    elif expected is float:
+                                        setattr(cfg.sim, key, float(val))
+                                    else:
+                                        # fallback: store string
+                                        setattr(cfg.sim, key, val)
+                                except Exception as e:
+                                    return f"❌ Failed to set '{key}': {e}"
+
+                            # Rebuild pipeline to apply new config (optional)
+                            try:
+                                pipe = Pipeline()
+                                pipe.configparams = cfg
+                            except Exception as e:
+                                return f"⚠️ Updated params but pipeline rebuild failed: {e}"
+
+                            return "✔ Simulation parameters updated successfully."
+
+                        # Connect button: pass the list of components (NOT a dict)
+                        update_sim_button.click(
+                            fn=update_sim_params_wrapper,
+                            inputs=sim_widgets,   # list of components
+                            outputs=sim_update_status
+                        )
+
+
+
 
         # ---------- Callback for Read RAMSES button ----------
         def on_read_ramses(ramses_dir):
@@ -269,9 +361,6 @@ def launch_interface():
         )
 
     return demo
-
-
-
 
 
 
