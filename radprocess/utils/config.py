@@ -1,7 +1,61 @@
 from dataclasses import dataclass, fields, is_dataclass, field
+#from pydantic import BaseModel, Field
 import html
 from typing import Literal, Any
+import ipywidgets as widgets
+from IPython.display import display 
 
+
+def interactive_config(dataclass_obj):
+    widgets_dict = {}
+
+    for f in fields(dataclass_obj):
+        val = getattr(dataclass_obj, f.name)
+        typ = f.type
+
+        # Boolean -> Checkbox
+        if typ is bool:
+            w = widgets.Checkbox(value=val, description=f.name)
+
+        # Integer -> IntText
+        elif typ is int:
+            w = widgets.IntText(value=val, description=f.name)
+
+        # Float -> FloatText
+        elif typ is float:
+            w = widgets.FloatText(value=val, description=f.name)
+
+        # String -> Text input
+        elif typ is str:
+            w = widgets.Text(value=val, description=f.name)
+
+        # Fallback
+        else:
+            w = widgets.Text(value=str(val), description=f"{f.name} (untyped)")
+
+        def make_handler(field_name, widget):
+            def handler(change):
+                setattr(dataclass_obj, field_name, change["new"])
+            return handler
+
+        w.observe(make_handler(f.name, w), "value")
+        widgets_dict[f.name] = w
+
+    box = widgets.VBox(list(widgets_dict.values()))
+    display(box)
+
+
+def validate_type(obj, field_name, value):
+    """Validate the type of a field dynamically based on the dataclass annotation."""
+    flds = fields(obj)
+    f = next(ff for ff in flds if ff.name == field_name)
+    expected_type = f.type
+
+    if not isinstance(value, expected_type):
+        raise TypeError(
+            f"Invalid type for '{field_name}': "
+            f"expected {expected_type.__name__}, got {type(value).__name__}"
+        )
 
 # =======================================================
 # Utility: scientific number formatting
@@ -175,13 +229,36 @@ def fancy_repr(obj) -> str:
     return "\n".join(lines)
 
 
+class StrictDataclass:
+    def __setattr__(self, name, value):
+        if name in {f.name for f in fields(self)}:
+            expected_type = next(f for f in fields(self) if f.name == name).type
+            if not isinstance(value, expected_type):
+                raise TypeError(
+                    f"❌ Error: Field '{name}' expects type {expected_type.__name__}, "
+                    f"got {type(value).__name__}"
+                )
+        super().__setattr__(name, value)
+
+
+
 # =======================================================
 # PARAMETER DATACLASSES
 # =======================================================
 @dataclass
-class InputOutput:
+class RamsesOutput(StrictDataclass):
     ramses_output_dir: str = field(default='ramses_outputs/', 
         metadata={'desc': r'The RAMSES output directory path.'})
+    
+    def __repr__(self):  # terminal
+        return fancy_repr(self)
+
+    def _repr_html_(self):  # Jupyter
+        return _html_repr(self)
+
+
+@dataclass
+class RadiativeOutput(StrictDataclass):
     polaris_output_dir: str = field(default='polaris_outputs/', 
         metadata={'desc': r'The POLARIS output directory path.'})
     radmc_output_dir: str = field(default='radmc3d_outputs/', 
@@ -195,7 +272,7 @@ class InputOutput:
 
 
 @dataclass
-class Pymsesrc:
+class Pymsesrc(StrictDataclass):
     rho: bool = field(default=True, 
         metadata={'desc': r'Include the gas density field (always True)'})
     dustratios: bool = field(default=True, 
@@ -223,7 +300,7 @@ class Pymsesrc:
 
 
 @dataclass
-class Sim:
+class Sim(StrictDataclass):
     size_hole_au: float = field(default=4., 
         metadata={'desc': r'[AU] Size of the central hole to exclude around the star.'})
     dtogas: float = field(default=0.01, 
@@ -233,7 +310,7 @@ class Sim:
     use_ramses_T: bool = field(default=True, 
         metadata={'desc': r' Use RAMSES stellar temperature field(s) directly (if available) to create the star(s) file in RT simulations.'})
     use_ramses_acc_rate: bool = field(default=True, 
-        metadata={'desc': r' Use RAMSES accretion rate field(s) directly (if available) to create the star(s) file in RT simulations.'})
+        metadata={'desc': r' Use RAMSES retion rate field(s) directly (if available) to create the star(s) file in RT simulations.'})
     use_multi_grain: bool = field(default=True, 
         metadata={'desc': r'Do RT with multiple bins if True (if RAMSES output has multiple bins). If False, then dust density is computed using dtogas*rho.'})
 
@@ -248,8 +325,9 @@ class Sim:
 
 # ---------------- Structure Params ----------------
 @dataclass
-class ConfigParams:
-    inout: InputOutput= field(default_factory=InputOutput)
+class ConfigParams(StrictDataclass):
+    ramsesoutput: RamsesOutput= field(default_factory=RamsesOutput)
+    radoutput: RadiativeOutput= field(default_factory=RadiativeOutput)
     pymsesrc: Pymsesrc = field(default_factory=Pymsesrc)
     sim: Sim = field(default_factory=Sim)
 

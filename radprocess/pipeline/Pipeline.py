@@ -1,4 +1,5 @@
 import os
+import json
 
 from radprocess.pipeline.Grid import Grid
 from radprocess.pipeline.Convert import Convert
@@ -14,7 +15,88 @@ class Pipeline:
         self.convert = Convert() 
         self.grid = Grid()
         self.configparams = ConfigParams()
+
+
+    def read_pymsesrc(self):
+        """
+        Reads pymsesrc file from the current pymses.
+        Returns a formatted string.
+        """
+        ramses_dir = self.configparams.ramsesoutput.ramses_output_dir
+        try:
+            nvar, variables, nb_dust = ramses.read.hydro_file_descriptor(ramses_dir)
+
+            text = f"nvar = {nvar}\n\nVariables:\n"
+            for idx, name in variables.items():
+                text += f"  #{idx}: {name}\n"
+
+            text += f"\nDust ratios detected: {nb_dust}\n"
+            return text
+
+        except Exception as e:
+            return f"Error reading hydro_file_descriptor.txt:\n{e}"
+
+
+    def read_hydro_descriptor(self):
+        """
+        Reads hydro_file_descriptor.txt from the current RAMSES directory.
+        Returns a formatted string.
+        """
+        ramses_dir = self.configparams.ramsesoutput.ramses_output_dir
+        try:
+            nvar, variables, nb_dust = ramses.read.hydro_file_descriptor(ramses_dir)
+
+            text = f"nvar = {nvar}\n\nVariables:\n"
+            for idx, name in variables.items():
+                text += f"  #{idx}: {name}\n"
+
+            text += f"\nDust ratios detected: {nb_dust}\n"
+            return text
+
+        except Exception as e:
+            return f"Error reading hydro_file_descriptor.txt:\n{e}"
         
+
+    def read_sink_info(self):
+        """
+        Reads the sink_0000.info file from the RAMSES output directory
+        using ramses.read.sink_info() function.
+        Returns a string suitable for HTML display.
+        """
+
+        ramses_dir = self.configparams.ramsesoutput.ramses_output_dir
+        try:
+            sink_data = ramses.read.sink_info(ramses_dir)
+        except Exception as e:
+            return f"Error reading sink info: {e}"
+
+        # Convert to aligned string
+        columns = sink_data.columns
+        rows = sink_data.rows
+
+        lines = ["  ".join(columns)]
+        for row in rows:
+            lines.append("  ".join(str(row[col]) for col in columns))
+
+        return "\n".join(lines)
+        
+    def read_pymsesrc(self):
+        """Reads the ~/.pymses/pymsesrc JSON file and returns a dictionary."""
+        pymses_directory = os.path.expanduser("~/.pymses")
+        filename = os.path.join(pymses_directory, "pymsesrc")
+
+        if not os.path.isfile(filename):
+            raise FileNotFoundError(f"{filename} not found. Please create the pymsesrc file.")
+
+        try:
+            with open(filename, "r") as f:
+                config_dict = json.load(f)
+        except json.JSONDecodeError as e:
+            raise RuntimeError(f"Error decoding JSON in {filename}:\n{e}")
+        except Exception as e:
+            raise RuntimeError(f"Error while reading {filename}:\n{e}")
+
+        return config_dict
 
     def set_pymsesrc(self):
         """

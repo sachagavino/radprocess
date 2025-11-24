@@ -1,4 +1,5 @@
 import os
+#import json
 
 import numpy as np
 
@@ -115,3 +116,40 @@ def sink_info(path):
         data=sinks
     )
 
+
+
+# def pymsesrc():
+#     """Parses the pymsesrc file and returns it as a Python dictionary."""
+    
+#     pymses_directory = os.path.expanduser("~/.pymses")
+
+#     # Check if the directory exists, and create it if it doesn't
+#     if not os.path.exists(pymses_directory):
+#         os.makedirs(pymses_directory)
+
+#     filename = os.path.join(pymses_directory, "pymsesrc")
+
+#     # Check that the file exists
+#     if not os.path.isfile(filename):
+#         raise FileNotFoundError(
+#             f"~/.pymses/pymsesrc file not found.\n"
+#         )
+
+#     # Read and parse the file
+#     try:
+#         with open(filename, "r") as f:
+#             file_content = json.load(f)  # parse JSON content
+
+#     except json.JSONDecodeError as e:
+#         raise RuntimeError(
+#             f"Error decoding JSON in {filename}:\n{e}\n"
+#             "Please check that the file contains valid JSON."
+#         )
+
+#     except Exception as e:
+#         raise RuntimeError(
+#             f"Error while reading {filename}:\n{e}\n"
+#             "Please, check the file pymsesrc."
+#         )
+
+#     return file_content
