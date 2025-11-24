@@ -8,7 +8,7 @@ Here is the pipeline dashboard:
 
 <picture>
   <source srcset="_static/dashboad_gr_pipeline.png" media="(prefers-color-scheme: dark)">
-  <img src="_static/dashboad_gr_pipeline.png" alt="dashboard", width="500">
+  <img src="_static/dashboad_gr_pipeline.png" alt="dashboard", width="700">
 </picture>
 
 ## User's guide
