@@ -7,8 +7,8 @@ It uses the web interface Gradio, which provides an intuitive way to build and r
 Here is an example of the pipeline dashboard:
 
 <picture>
-  <source srcset="docs/source/_static/logo-dark.png" media="(prefers-color-scheme: dark)">
-  <img src="_static/dashboard_gr_pipeline.png" alt="dashboard", width="300">
+  <source srcset="_static/dashboad_gr_pipeline.png" media="(prefers-color-scheme: dark)">
+  <img src="_static/dashboad_gr_pipeline.png" alt="dashboard", width="300">
 </picture>
 
 ## User's guide
