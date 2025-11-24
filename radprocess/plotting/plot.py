@@ -13,7 +13,7 @@ def plot_sink_columns(sink_data, x_col, y_col):
     x = [float(row[x_col]) for row in sink_data]
     y = [float(row[y_col]) for row in sink_data]
 
-    fig, ax = plt.subplots(figsize=(6, 4))
+    fig, ax = plt.subplots(figsize=(6, 5))
     ax.scatter(x, y)
     ax.set_xlabel(x_col)
     ax.set_ylabel(y_col)

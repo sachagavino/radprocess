@@ -198,14 +198,18 @@ def launch_interface():
             with gr.Column(scale=3):
                 with gr.Tabs() as plot_tabs:
                     with gr.Tab("Sink plots"):
-                        # Plot button above figure
-                        plot_button = gr.Button("Plot")
+                        # Dropdowns first
                         x_dropdown = gr.Dropdown(choices=[], label="X Column", allow_custom_value=True)
                         y_dropdown = gr.Dropdown(choices=[], label="Y Column", allow_custom_value=True)
+                        
+                        # Plot button below dropdowns
+                        plot_button = gr.Button("Plot", variant="primary")
+                        
+                        # Plot output
                         plot_output = gr.Plot()
 
                         def generate_sink_plot(sink_rows, x_col, y_col):
-                            from radprocess.plotting.plot import plot_sink_columns
+
                             if not sink_rows or not x_col or not y_col:
                                 return None
                             fig = plot_sink_columns(sink_rows, x_col, y_col)
