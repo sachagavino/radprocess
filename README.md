@@ -4,11 +4,11 @@
 Radprocess is a pipeline that converts RAMSES output for radiative tranfer postprocessing. 
 It uses the web interface Gradio, which provides an intuitive way to build and run your postprocessing pipeline.
 
-Here is an example of the pipeline dashboard:
+Here is the pipeline dashboard:
 
 <picture>
   <source srcset="_static/dashboad_gr_pipeline.png" media="(prefers-color-scheme: dark)">
-  <img src="_static/dashboad_gr_pipeline.png" alt="dashboard", width="300">
+  <img src="_static/dashboad_gr_pipeline.png" alt="dashboard", width="500">
 </picture>
 
 ## User's guide
