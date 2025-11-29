@@ -20,8 +20,9 @@ def encode_image_base64(path):
     with open(path, "rb") as f:
         return base64.b64encode(f.read()).decode("utf-8")
 
-logo1_b64 = encode_image_base64(os.path.join(STATIC_DIR, "icelogo.png"))
-logo2_b64 = encode_image_base64(os.path.join(STATIC_DIR, "ecogal2.png"))
+logo1_b64 = encode_image_base64(os.path.join(STATIC_DIR, "alma-mater-logo-vector.png"))
+logo2_b64 = encode_image_base64(os.path.join(STATIC_DIR, "icelogo.png"))
+logo3_b64 = encode_image_base64(os.path.join(STATIC_DIR, "ecogal2.png"))
 
 
 def dict_to_table_html(d, level=0):
@@ -154,162 +155,230 @@ def launch_interface():
             <div style="display:flex; gap:20px;">
                 <img src="data:image/png;base64,{logo1_b64}" style="height:50px;">
                 <img src="data:image/png;base64,{logo2_b64}" style="height:50px;">
+                <img src="data:image/png;base64,{logo3_b64}" style="height:50px;">
             </div>
         </div>
         """)
 
-        # ---------- RAMSES Section ----------
-        gr.Markdown("""
-        # **RAMSES Section**
-        <hr style="border:2px solid #333; margin-top:5px; margin-bottom:20px;">
-        """)
+        # # ---------- RAMSES Section ----------
+        # gr.Markdown("""
+        # # **RAMSES Section**
+        # <hr style="border:2px solid #333; margin-top:5px; margin-bottom:20px;">
+        # """)
 
         # ---------- Main Row ----------
         with gr.Row():
-            # Left column: input + button + status
-            with gr.Column(scale=1):
-                ramses_dir_input = gr.Textbox(
-                    label="Enter the RAMSES output directory (absolute path recommended):",
-                    value="ramses_outputs/",
-                    lines=1,
-                    placeholder="/absolute/path/to/ramses/output/"
-                )
+            # Main Tabs: RAMSES section + RADMC3D section
+            with gr.Tabs() as main_tabs_row:
 
-                start_button = gr.Button("Read RAMSES", variant="primary")
+                # --------- RAMSES Tab ---------
+                with gr.Tab("RAMSES Section"):
 
-                status_box = gr.Textbox(
-                    label="Status",
-                    value="Awaiting input...",
-                    lines=4
-                )
+                    # ---------- Inner Row for RAMSES content ----------
+                    with gr.Row():
+                        # Left column: input + button + status
+                        with gr.Column(scale=1):
+                            ramses_dir_input = gr.Textbox(
+                                label="Enter the RAMSES output directory (absolute path recommended):",
+                                value="ramses_outputs/",
+                                lines=1,
+                                placeholder="enter path to RAMSES output here/"
+                            )
 
-            # Right column: tabs for hydro/sink/pymsesrc
-            with gr.Column(scale=2):
-                with gr.Tabs() as main_tabs:
-                    with gr.Tab("hydro_file_descriptor"):
-                        hydro_html = gr.HTML(value="", elem_id="hydro_display")
-                    with gr.Tab("sink info"):
-                        sink_html = gr.HTML(value="", elem_id="sink_display")
-                    with gr.Tab("pymsesrc"):
-                        pymsesrc_html = gr.HTML(value="", elem_id="pymsesrc_display")
+                            start_button = gr.Button("Read RAMSES", variant="primary")
 
-        # ---------- Hidden states ----------
-        sink_data_state = gr.State()
-        sink_columns_state = gr.State()  # To store column names
+                            status_box = gr.Textbox(
+                                label="Status",
+                                value="Awaiting input...",
+                                lines=4
+                            )
 
-        # ---------- Second row ----------
-        with gr.Row():
-            with gr.Column(scale=3):
-                with gr.Tabs() as plot_tabs:
+                        # Right column: hydro/sink/pymsesrc tabs
+                        with gr.Column(scale=2):
+                            with gr.Tabs() as ram_tabs:
+                                with gr.Tab("hydro_file_descriptor"):
+                                    hydro_html = gr.HTML(value="", elem_id="hydro_display")
+                                with gr.Tab("sink info"):
+                                    sink_html = gr.HTML(value="", elem_id="sink_display")
+                                with gr.Tab("pymsesrc"):
+                                    pymsesrc_html = gr.HTML(value="", elem_id="pymsesrc_display")
 
-                    # ----------------- Existing Plot Tab -----------------
-                    with gr.Tab("Plot sinks"):
-                        # Dropdowns first
-                        x_dropdown = gr.Dropdown(choices=[], label="X Column", allow_custom_value=True)
-                        y_dropdown = gr.Dropdown(choices=[], label="Y Column", allow_custom_value=True)
+                    # ---------- Hidden states ----------
+                    sink_data_state = gr.State()
+                    sink_columns_state = gr.State()  # To store column names
 
-                        # Plot button below dropdowns
-                        plot_button = gr.Button("Plot", variant="secondary")
+                    # ---------- Second row: Plot + Update tabs ----------
+                    with gr.Row():
+                        with gr.Column(scale=3):
+                            with gr.Tabs() as plot_tabs:
 
-                        # Plot output
-                        plot_output = gr.Plot()
+                                # Existing Plot Tab
+                                with gr.Tab("Plot sinks"):
+                                    x_dropdown = gr.Dropdown(choices=[], label="X Column", allow_custom_value=True)
+                                    y_dropdown = gr.Dropdown(choices=[], label="Y Column", allow_custom_value=True)
+                                    plot_button = gr.Button("Plot", variant="secondary")
+                                    plot_output = gr.Plot()
 
-                        def generate_sink_plot(sink_rows, x_col, y_col):
-                            if not sink_rows or not x_col or not y_col:
-                                return None
-                            fig = plot_sink_columns(sink_rows, x_col, y_col)
-                            return fig
+                                    def generate_sink_plot(sink_rows, x_col, y_col):
+                                        if not sink_rows or not x_col or not y_col:
+                                            return None
+                                        fig = plot_sink_columns(sink_rows, x_col, y_col)
+                                        return fig
 
-                        plot_button.click(
-                            fn=generate_sink_plot,
-                            inputs=[sink_data_state, x_dropdown, y_dropdown],
-                            outputs=[plot_output]
-                        )
+                                    plot_button.click(
+                                        fn=generate_sink_plot,
+                                        inputs=[sink_data_state, x_dropdown, y_dropdown],
+                                        outputs=[plot_output]
+                                    )
 
-                    # ----------------- NEW EMPTY TABS -----------------
-                    with gr.Tab("Update pymsesrc"):
-                        gr.Markdown("*(This tab will be used to configure parameter set A.)*")
+                                # Update pymsesrc Tab
+                                # ---------------- Update pymsesrc Tab ----------------
+                                with gr.Tab("Update pymsesrc"):
+                                    gr.Markdown("### Pymsesrc Parameters")
 
-                    with gr.Tab("Update Parameters"):
+                                    py_fields = fields(cfg.pymsesrc)
+                                    py_keys = []
+                                    py_widgets = []
 
-                        # --- Build dynamic UI based on Sim dataclass ---
-                        sim_fields = fields(cfg.sim)
+                                    for f in py_fields:
+                                        f_name = f.name
+                                        f_default = getattr(cfg.pymsesrc, f_name)
+                                        f_desc = f.metadata.get("desc", "")
 
-                        # Use an ordered list to keep stable mapping between fields and values
-                        sim_widget_keys = []
-                        sim_widgets = []
+                                        py_keys.append(f_name)
 
-                        gr.Markdown("### Simulation Parameters")
+                                        widget = gr.Checkbox(label=f_desc, value=f_default)
+                                        py_widgets.append(widget)
 
-                        for f in sim_fields:
-                            f_name = f.name
-                            f_type = f.type
-                            f_default = getattr(cfg.sim, f_name)
-                            f_desc = f.metadata.get("desc", "")
+                                    update_pymses_button = gr.Button("Update", variant="primary")
+                                    pymses_update_status = gr.Textbox(label="Update Status", value="No updates yet.", lines=2)
 
-                            sim_widget_keys.append(f_name)
+                                    def update_pymsesrc_wrapper(*values):
+                                        global cfg, pipe
 
-                            # Boolean -> Checkbox (nice native widget)
-                            if f_type == bool:
-                                widget = gr.Checkbox(label=f"{f_desc}", value=f_default)
+                                        # 1. Update in-memory config
+                                        for key, val in zip(py_keys, values):
+                                            try:
+                                                setattr(cfg.pymsesrc, key, bool(val))
+                                            except Exception as e:
+                                                return f"Failed to set '{key}': {e}", gr.update(value=None)
 
-                            # Numeric -> Number
-                            elif f_type in (int, float):
-                                # gr.Number supports both int/float; keep value as f_default
-                                widget = gr.Number(label=f"{f_desc}", value=f_default)
+                                        # 2. Save pymsesrc
+                                        try:
+                                            pipe.set_pymsesrc()
+                                        except Exception as e:
+                                            return f"Updated memory but failed to write file: {e}", gr.update(value=None)
 
-                            else:
-                                # Fallback: text field (string/untyped)
-                                widget = gr.Textbox(label=f"{f_desc}", value=str(f_default))
+                                        # 3. Reload HTML table
+                                        try:
+                                            pymses_dict = pipe.read_pymsesrc()
+                                            new_html = dict_to_table_html(pymses_dict)
+                                            new_html = f"""
+                                            <div style="overflow:auto; max-height:400px; border:1px solid #888; border-radius:6px; padding:5px;">
+                                                {new_html}
+                                            </div>
+                                            """
+                                        except Exception as e:
+                                            return f"Updated but failed to reload table: {e}", gr.update(value=None)
 
-                            sim_widgets.append(widget)
+                                        return "✔ Pymsesrc updated successfully.", gr.update(value=new_html)
+                                    
+                    
+                                update_pymses_button.click(
+                                    fn=update_pymsesrc_wrapper,
+                                    inputs=py_widgets,
+                                    outputs=[pymses_update_status, pymsesrc_html]
+                                )
 
-                        # Status output and Update button
-                        update_sim_button = gr.Button("Update", variant="primary")
-                        sim_update_status = gr.Textbox(label="Update Status", value="No updates yet.", lines=2)
 
-                        # Wrapper that receives positional args in the same order as sim_widgets list
-                        def update_sim_params_wrapper(*values):
-                            """
-                            values is a tuple with one element per widget in sim_widgets,
-                            in the same order as sim_widget_keys.
-                            """
-                            global cfg, pipe
-                            # Map values to field names and set attributes (StrictDataclass will validate)
-                            for key, val in zip(sim_widget_keys, values):
-                                # Convert Textbox fallback strings to original type if needed
-                                f_decl = next(ff for ff in sim_fields if ff.name == key)
-                                expected = f_decl.type
-                                try:
-                                    if expected is bool:
-                                        # Checkbox already returns bool
-                                        setattr(cfg.sim, key, bool(val))
-                                    elif expected is int:
-                                        setattr(cfg.sim, key, int(val))
-                                    elif expected is float:
-                                        setattr(cfg.sim, key, float(val))
-                                    else:
-                                        # fallback: store string
-                                        setattr(cfg.sim, key, val)
-                                except Exception as e:
-                                    return f"❌ Failed to set '{key}': {e}"
 
-                            # Rebuild pipeline to apply new config (optional)
-                            try:
-                                pipe = Pipeline()
-                                pipe.configparams = cfg
-                            except Exception as e:
-                                return f"⚠️ Updated params but pipeline rebuild failed: {e}"
+                                # Update Parameters Tab
+                                with gr.Tab("Update Parameters"):
+                                    sim_fields = fields(cfg.sim)
+                                    sim_widget_keys = []
+                                    sim_widgets = []
 
-                            return "✔ Simulation parameters updated successfully."
+                                    gr.Markdown("### Simulation Parameters")
 
-                        # Connect button: pass the list of components (NOT a dict)
-                        update_sim_button.click(
-                            fn=update_sim_params_wrapper,
-                            inputs=sim_widgets,   # list of components
-                            outputs=sim_update_status
-                        )
+                                    for f in sim_fields:
+                                        f_name = f.name
+                                        f_type = f.type
+                                        f_default = getattr(cfg.sim, f_name)
+                                        f_desc = f.metadata.get("desc", "")
 
+                                        sim_widget_keys.append(f_name)
+
+                                        if f_type == bool:
+                                            widget = gr.Checkbox(label=f"{f_desc}", value=f_default)
+                                        elif f_type in (int, float):
+                                            widget = gr.Number(label=f"{f_desc}", value=f_default)
+                                        else:
+                                            widget = gr.Textbox(label=f"{f_desc}", value=str(f_default))
+
+                                        sim_widgets.append(widget)
+
+                                    update_sim_button = gr.Button("Update", variant="primary")
+                                    sim_update_status = gr.Textbox(label="Update Status", value="No updates yet.", lines=2)
+
+                                    def update_sim_params_wrapper(*values):
+                                        global cfg, pipe
+                                        for key, val in zip(sim_widget_keys, values):
+                                            f_decl = next(ff for ff in sim_fields if ff.name == key)
+                                            expected = f_decl.type
+                                            try:
+                                                if expected is bool:
+                                                    setattr(cfg.sim, key, bool(val))
+                                                elif expected is int:
+                                                    setattr(cfg.sim, key, int(val))
+                                                elif expected is float:
+                                                    setattr(cfg.sim, key, float(val))
+                                                else:
+                                                    setattr(cfg.sim, key, val)
+                                            except Exception as e:
+                                                return f"❌ Failed to set '{key}': {e}"
+                                        try:
+                                            pipe = Pipeline()
+                                            pipe.configparams = cfg
+                                        except Exception as e:
+                                            return f"⚠️ Updated params but pipeline rebuild failed: {e}"
+                                        return "✔ Simulation parameters updated successfully."
+
+                                    update_sim_button.click(
+                                        fn=update_sim_params_wrapper,
+                                        inputs=sim_widgets,
+                                        outputs=sim_update_status
+                                    )
+
+
+                # --------- RADMC3D Tab (empty) ---------
+                with gr.Tab("RADMC3D Section"):
+                    # ---------- Inner Row for RAMSES content ----------
+                    with gr.Row():
+                        # Left column: input + button + status
+                        with gr.Column(scale=1):
+                            radmc3d_dir_input = gr.Textbox(
+                                label="Enter the RADMC3D output directory (absolute path recommended):",
+                                value="radmc3d_outputs/",
+                                lines=1,
+                                placeholder="enter path to RADMC3D output here/"
+                            )
+
+                            set_radmc3d_button = gr.Button("Set RADMC3D directory", variant="primary")
+
+
+                            status_box = gr.Textbox(
+                                label="Status",
+                                value="Awaiting input...",
+                                lines=4
+                            )
+
+                # --------- POLARIS Tab (empty) ---------
+                with gr.Tab("POLARIS Section"):
+                    gr.Markdown("*(This tab is currently empty and reserved for POLARIS controls.)*")
+
+                # --------- PIPLINE Tab (empty) ---------
+                with gr.Tab("PIPELINE"):
+                    gr.Markdown("*(This tab is currently empty and reserved to run the pipeline .)*")
 
 
 
@@ -345,13 +414,45 @@ def launch_interface():
             ]
         )
 
+
+        def on_set_radmc3d(radmc_dir):
+            global cfg, pipe
+            
+            try:
+                # Create the directory if missing
+                if not os.path.exists(radmc_dir):
+                    os.makedirs(radmc_dir)
+                    msg = f"Directory did not exist — created:\n{radmc_dir}\n"
+                else:
+                    msg = f"Directory exists and will be used:\n{radmc_dir}\n"
+
+                # Store in config
+                cfg.radoutput.radmc_output_dir = radmc_dir
+
+                # Rebuild pipeline so it uses updated config
+                pipe = Pipeline()
+                pipe.configparams = cfg
+
+                msg += "\n✔ RADMC3D directory stored in cfg.radoutput.radmc_output_dir"
+                return msg
+            except Exception as e:
+                return f"❌ Failed to set RADMC3D directory: {e}"
+            
+        set_radmc3d_button.click(
+            fn=on_set_radmc3d,
+            inputs=[radmc3d_dir_input],
+            outputs=[status_box]
+        )
+
+
+
         # ---------- Update dropdowns when column names are ready ----------
         def update_dropdowns(columns):
             if not columns:
-                return gr.Dropdown.update(choices=[], value=None), gr.Dropdown.update(choices=[], value=None)
+                return gr.update(choices=[], value=None), gr.update(choices=[], value=None)
             return (
-                gr.Dropdown.update(choices=columns, value=columns[0]),
-                gr.Dropdown.update(choices=columns, value=columns[1] if len(columns) > 1 else columns[0])
+                gr.update(choices=columns, value=columns[0]),
+                gr.update(choices=columns, value=columns[1] if len(columns) > 1 else columns[0])
             )
 
         sink_columns_state.change(
@@ -360,6 +461,7 @@ def launch_interface():
             outputs=[x_dropdown, y_dropdown]
         )
 
+    demo.launch(theme=gr.themes.Citrus())
     return demo
 
 

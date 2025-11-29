@@ -104,7 +104,7 @@ class Pipeline:
         then return the Pymsesrc object so Jupyter displays it.
         """
         ndust = ramses.read.hydro_file_descriptor(
-            self.configparams.inout.ramses_output_dir
+            self.configparams.ramsesoutput.ramses_output_dir
         )[2]
         print(f'there is {ndust} dust species in the RAMSES simulation.')  
         # Write the file
