@@ -10,9 +10,10 @@ import os
 
 import numpy as np
 
-from radprocess import pymses3
+import radprocess.pymses3 as pymses
+
 #from radprocess.pymses.utils import constants as C
-#from radprocess.pymses.filters import CellsToPoints
+#from radprocess.pymses3.filters import CellsToPoints
 from radprocess import radmc3d
 from radprocess import ramses
 from radprocess.pipeline.OcTree import OcTree
@@ -25,19 +26,19 @@ class Convert:
         # self.ndust = ramses.read.hydro_file_descriptor('/Users/sachagavino/science/projects/ecogal/enygma/fiducial_test/ramses_model/maxime_model/output_00013/')[2]
 
 
-
-
-    def to_radmc(self):
+    def to_radmc(self, ramses_folder, ramses_num, radmc_dir):
         CLR_LINE =   "                                                      \r"
         cell_counter = 0
         fields = []
         i = 0
-        if rho == True:
-            fields.append('rho')
-        if self.ndust > 0:
-            while i < self.ndust:
-                fields.append("dustratio%d" % (i+1))
-                i += 1
+        #nvar, variables, nb_dust = ramses.read.hydro_file_descriptor(ramses_folder)
+        #snap = pymses.RamsesOutput(ramses_folder, ramses_num)
+        # if rho == True:
+        #     fields.append('rho')
+        # if self.ndust > 0:
+        #     while i < self.ndust:
+        #         fields.append("dustratio%d" % (i+1))
+        #         i += 1
         #snap = pymses.RamsesOutput(folder,num)
         #amr = snap.amr_source(fields)
         

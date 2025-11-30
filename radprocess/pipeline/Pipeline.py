@@ -35,7 +35,7 @@ class Pipeline:
 
         except Exception as e:
             return f"Error reading hydro_file_descriptor.txt:\n{e}"
-
+        
 
     def read_hydro_descriptor(self):
         """
@@ -123,6 +123,30 @@ class Pipeline:
 
         # RETURN Pymsesrc config block → Jupyter displays it
         return self.configparams.pymsesrc
+    
+    def set_radmc3d_dir(self, path):
+        """
+        Ensure a RADMC-3D directory exists, store it in configparams,
+        and optionally read wavelength/dust files if present.
+        Returns a summary string for UI display.
+        """
+        # 1. Create directory if needed
+        if not os.path.isdir(path):
+            os.makedirs(path, exist_ok=True)
+            created = True
+        else:
+            created = False
+
+        # 2. Store the directory in config
+        self.configparams.radoutput.radmc_output_dir = path
+
+        messages = []
+        if created:
+            messages.append(f"Created RADMC-3D directory:\n  {self.configparams.radoutput.radmc_output_dir}")
+        else:
+            messages.append(f"Using existing RADMC-3D directory:\n  {self.configparams.radoutput.radmc_output_dir}")
+    
+        return "\n".join(messages)
 
         
     def thermal_radmc3d(self,
@@ -177,3 +201,14 @@ class Pipeline:
 
         if write_control==True:
             radmc3d.write.control(**keywords)
+
+    # LOAD RAMSES DATA
+    def convert_rasmes2radmc(self):
+        ramses_dir = self.configparams.ramsesoutput.ramses_output_dir
+        radmc_dir = self.configparams.radoutput.radmc_output_dir
+
+        clean = ramses_dir.strip().rstrip("/")   # remove whitespace + trailing slash
+        folder = clean.rsplit("/", 1)[0] + "/"
+        num = int(clean.rsplit("_", 1)[1])
+
+        self.convert.to_radmc(folder, num, radmc_dir)

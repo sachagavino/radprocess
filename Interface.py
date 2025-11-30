@@ -1,5 +1,7 @@
 import os
-import inspect
+import time
+import sys
+import io
 from dataclasses import fields
 
 import base64
@@ -23,6 +25,7 @@ def encode_image_base64(path):
 logo1_b64 = encode_image_base64(os.path.join(STATIC_DIR, "alma-mater-logo-vector.png"))
 logo2_b64 = encode_image_base64(os.path.join(STATIC_DIR, "icelogo.png"))
 logo3_b64 = encode_image_base64(os.path.join(STATIC_DIR, "ecogal2.png"))
+logo4_b64 = encode_image_base64(os.path.join(STATIC_DIR, "logo-dark.png"))
 
 
 def dict_to_table_html(d, level=0):
@@ -87,8 +90,8 @@ def sink_text_to_table(text):
 # -----------------------------
 # Global config and pipeline
 # -----------------------------
-cfg = ConfigParams()
-pipe = None
+pipe = Pipeline()
+cfg = pipe.configparams
 
 # -----------------------------
 # Core update function
@@ -108,7 +111,7 @@ def start_pipeline_display(ramses_dir):
     header = lines[0].split() if lines else []
     sink_rows = [dict(zip(header, line.split())) for line in lines[1:]] if len(lines) > 1 else []
 
-    status_text = f"RAMSES directory set to:\n{ramses_dir}\n"
+    status_text = f"RAMSES data will be loaded from:\n{ramses_dir}\n"
 
     hydro_html = f"""
     <div style="overflow:auto; max-height:400px; border:1px solid #888; border-radius:6px; padding:5px;">
@@ -151,14 +154,19 @@ def launch_interface():
             top:0;
             z-index:100;
         ">
-            <div style="font-size:32px; font-weight:800;">radprocess</div>
-            <div style="display:flex; gap:20px;">
+            <div style="font-size:32px; font-weight:800; display:flex; align-items:center; gap:10px;">
+                <span style="display:flex; align-items:center; transform: translateY(6px);">astroMUGS</span>
+                <img src="data:image/png;base64,{logo4_b64}" style="height:70px; display:block; transform: translateY(-10px);">
+            </div>
+            
+            <div style="display:flex; gap:20px; align-items:center;">
                 <img src="data:image/png;base64,{logo1_b64}" style="height:50px;">
                 <img src="data:image/png;base64,{logo2_b64}" style="height:50px;">
                 <img src="data:image/png;base64,{logo3_b64}" style="height:50px;">
             </div>
         </div>
         """)
+
 
         # # ---------- RAMSES Section ----------
         # gr.Markdown("""
@@ -366,7 +374,7 @@ def launch_interface():
                             set_radmc3d_button = gr.Button("Set RADMC3D directory", variant="primary")
 
 
-                            status_box = gr.Textbox(
+                            radmc_status_box = gr.Textbox(
                                 label="Status",
                                 value="Awaiting input...",
                                 lines=4
@@ -376,9 +384,16 @@ def launch_interface():
                 with gr.Tab("POLARIS Section"):
                     gr.Markdown("*(This tab is currently empty and reserved for POLARIS controls.)*")
 
-                # --------- PIPLINE Tab (empty) ---------
+                # --------- PIPLINE Tab ---------
                 with gr.Tab("PIPELINE"):
-                    gr.Markdown("*(This tab is currently empty and reserved to run the pipeline .)*")
+                    gr.Markdown("### Run RAMSES → RADMC3D Conversion")
+                    convert_button = gr.Button("Convert to RADMC3D", variant="primary")
+                    convert_log = gr.Textbox(
+                        label="Live Conversion Log",
+                        value="Logs will appear here...",
+                        lines=20,
+                        interactive=False
+                    )
 
 
 
@@ -414,37 +429,66 @@ def launch_interface():
             ]
         )
 
-
+        # ---------- Callback for Read RAMSES button ----------
         def on_set_radmc3d(radmc_dir):
-            global cfg, pipe
-            
             try:
-                # Create the directory if missing
-                if not os.path.exists(radmc_dir):
-                    os.makedirs(radmc_dir)
-                    msg = f"Directory did not exist — created:\n{radmc_dir}\n"
-                else:
-                    msg = f"Directory exists and will be used:\n{radmc_dir}\n"
-
-                # Store in config
-                cfg.radoutput.radmc_output_dir = radmc_dir
-
-                # Rebuild pipeline so it uses updated config
-                pipe = Pipeline()
-                pipe.configparams = cfg
-
-                msg += "\n✔ RADMC3D directory stored in cfg.radoutput.radmc_output_dir"
-                return msg
+                info = pipe.set_radmc3d_dir(radmc_dir)
+                return info
             except Exception as e:
-                return f"❌ Failed to set RADMC3D directory: {e}"
+                return f"Error: {e}"
             
         set_radmc3d_button.click(
             fn=on_set_radmc3d,
             inputs=[radmc3d_dir_input],
-            outputs=[status_box]
+            outputs=[radmc_status_box]
         )
 
+        # ---------- Convert to RADMC3D callback ----------
+        def on_convert():
+            try:
+                pipe.convert_rasmes2radmc()
+                return "✔ Conversion complete."
+            except Exception as e:
+                return f"❌ Conversion failed: {e}"
 
+        def on_convert_stream():
+            """
+            Streams output line-by-line to the Gradio UI during conversion.
+            """
+
+            # Capture stdout
+            buffer = io.StringIO()
+            old_stdout = sys.stdout
+            sys.stdout = buffer
+
+            yield "Starting RAMSES → RADMC3D conversion...\n"
+
+            try:
+                # Surround the conversion with our own messaging
+                print("Initializing conversion...")
+                yield buffer.getvalue(); buffer.truncate(0); buffer.seek(0)
+
+                pipe.convert_rasmes2radmc()
+
+                # Capture the final print statements
+                yield buffer.getvalue(); buffer.truncate(0); buffer.seek(0)
+
+                yield "✔ Conversion complete.\n"
+
+            except Exception as e:
+                yield buffer.getvalue()
+
+                yield f"❌ Conversion failed: {e}\n"
+
+            finally:
+                # Restore stdout no matter what
+                sys.stdout = old_stdout
+
+        convert_button.click(
+            fn=on_convert_stream,
+            inputs=[],
+            outputs=convert_log
+        )
 
         # ---------- Update dropdowns when column names are ready ----------
         def update_dropdowns(columns):
