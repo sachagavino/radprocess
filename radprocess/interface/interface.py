@@ -515,4 +515,4 @@ def launch_interface():
 # -----------------------------
 if __name__ == "__main__":
     demo = launch_interface()
-    demo.launch()
+    demo.launch(share=True)
