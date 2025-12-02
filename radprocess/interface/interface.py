@@ -505,7 +505,7 @@ def launch_interface():
             outputs=[x_dropdown, y_dropdown]
         )
 
-    demo.launch(theme=gr.themes.Citrus())
+    demo.launch(theme=gr.themes.Citrus(), share=True)
     return demo
 
 
@@ -515,4 +515,4 @@ def launch_interface():
 # -----------------------------
 if __name__ == "__main__":
     demo = launch_interface()
-    demo.launch(share=True)
+    demo.launch()
