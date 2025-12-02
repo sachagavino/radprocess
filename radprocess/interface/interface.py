@@ -154,8 +154,8 @@ def launch_interface():
             top:0;
             z-index:100;
         ">
-            <div style="font-size:32px; font-weight:800; display:flex; align-items:center; gap:10px;">
-                <span style="display:flex; align-items:center; transform: translateY(6px);">astroMUGS</span>
+            <div style="font-size:32px; font-weight:800; display:flex; align-items:center; gap:5px;">
+                <span style="display:flex; align-items:center; transform: translateY(7px);">astroMUGS</span>
                 <img src="data:image/png;base64,{logo4_b64}" style="height:70px; display:block; transform: translateY(-10px);">
             </div>
             
