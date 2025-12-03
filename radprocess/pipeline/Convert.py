@@ -10,10 +10,10 @@ import os
 
 import numpy as np
 
-#import radprocess.pymses3 as pymses
+import pymses
+from pymses.utils import constants as C
+from pymses.filters import CellsToPoints
 
-#from radprocess.pymses.utils import constants as C
-#from radprocess.pymses3.filters import CellsToPoints
 from radprocess import radmc3d
 from radprocess import ramses
 from radprocess.pipeline.OcTree import OcTree
@@ -26,13 +26,15 @@ class Convert:
         # self.ndust = ramses.read.hydro_file_descriptor('/Users/sachagavino/science/projects/ecogal/enygma/fiducial_test/ramses_model/maxime_model/output_00013/')[2]
 
 
-    def to_radmc(self, ramses_folder, ramses_num, radmc_dir):
+    def ramses2radmc(self, ramses_folder, ramses_num, radmc_dir, sources):
         CLR_LINE =   "                                                      \r"
         cell_counter = 0
         fields = []
         i = 0
         #nvar, variables, nb_dust = ramses.read.hydro_file_descriptor(ramses_folder)
-        #snap = pymses.RamsesOutput(ramses_folder, ramses_num)
+        snap = pymses.RamsesOutput(ramses_folder, ramses_num)
+        fields = ['density']
+        #snap.amr_fields()
         # if rho == True:
         #     fields.append('rho')
         # if self.ndust > 0:
@@ -40,7 +42,7 @@ class Convert:
         #         fields.append("dustratio%d" % (i+1))
         #         i += 1
         #snap = pymses.RamsesOutput(folder,num)
-        #amr = snap.amr_source(fields)
+        amr = snap.amr_source(fields)
         
 
     def to_polaris(self):

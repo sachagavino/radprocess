@@ -117,7 +117,7 @@ def _repr_html_(self):
     body = (
         _html_table(self.inout)
         + "<br/>"
-        + _html_table(self.pymsesrc)
+        + _html_table(self.amrsource)
         + "<br/>"
         + _html_table(self.sim)
     )
@@ -230,12 +230,12 @@ class RadiativeOutput(StrictDataclass):
 
 
 @dataclass
-class Pymsesrc(StrictDataclass):
+class AmrSource(StrictDataclass):
     rho: bool = field(default=True, 
         metadata={'desc': r'Include the gas density field (always True)'})
-    dustratios: bool = field(default=True, 
-        metadata={'desc': r'RAMSES simulation has multiple dust species'})
-    vel: bool = field(default=True, 
+    dustratios: bool = field(default=False, 
+        metadata={'desc': r'Include the multiple dust species (if dust ratios exist)'})
+    vel: bool = field(default=False, 
         metadata={'desc': r'Include the velocity field'})
     bl: bool = field(default=False, 
         metadata={'desc': r'Include the magnetic field (B) components'})
@@ -249,6 +249,8 @@ class Pymsesrc(StrictDataclass):
         metadata={'desc': r'Include the gravitational potential field'})
     g: bool = field(default=False, 
         metadata={'desc': r'Include the gravitational acceleration field'})
+    temp: bool = field(default=False, 
+        metadata={'desc': r'Include the gas temperature field'})
 
     def __repr__(self):  # terminal
         return fancy_repr(self)
@@ -286,7 +288,7 @@ class Sim(StrictDataclass):
 class ConfigParams(StrictDataclass):
     ramsesoutput: RamsesOutput= field(default_factory=RamsesOutput)
     radoutput: RadiativeOutput= field(default_factory=RadiativeOutput)
-    pymsesrc: Pymsesrc = field(default_factory=Pymsesrc)
+    amrsource: AmrSource = field(default_factory=AmrSource)
     sim: Sim = field(default_factory=Sim)
 
     def __repr__(self):
@@ -294,7 +296,7 @@ class ConfigParams(StrictDataclass):
             "PARAMS\n-------\n"
             + fancy_repr(self.inout)
             + "\n\n"
-            + fancy_repr(self.pymsesrc)
+            + fancy_repr(self.amrsource)
             + "\n\n"
             + fancy_repr(self.sim)
         )
@@ -303,7 +305,7 @@ class ConfigParams(StrictDataclass):
         body = (
             _html_table(self.inout)
             + "<br/>"
-            + _html_table(self.pymsesrc)
+            + _html_table(self.amrsource)
             + "<br/>"
             + _html_table(self.sim)
         )

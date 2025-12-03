@@ -98,9 +98,20 @@ cfg = pipe.configparams
 # -----------------------------
 def start_pipeline_display(ramses_dir):
     global cfg, pipe
+    # Update config
     cfg.ramsesoutput.ramses_output_dir = ramses_dir
+    # Rebuild pipeline with updated config
     pipe = Pipeline()
     pipe.configparams = cfg
+
+    status_text = f"RAMSES data will be loaded from:\n{ramses_dir}\n"
+
+    # AUTO-WRITE ~/.pymses/pymsesrc -------------------------
+    try:
+        pipe.set_pymsesrc()
+    except Exception as e:
+        status_text += f"\n⚠ pymsesrc write failed: {e}"
+    # -------------------------------------------------------
 
     hydro_text = pipe.read_hydro_descriptor()
     sink_text = pipe.read_sink_info()
@@ -111,7 +122,7 @@ def start_pipeline_display(ramses_dir):
     header = lines[0].split() if lines else []
     sink_rows = [dict(zip(header, line.split())) for line in lines[1:]] if len(lines) > 1 else []
 
-    status_text = f"RAMSES data will be loaded from:\n{ramses_dir}\n"
+    
 
     hydro_html = f"""
     <div style="overflow:auto; max-height:400px; border:1px solid #888; border-radius:6px; padding:5px;">
@@ -239,18 +250,18 @@ def launch_interface():
                                         outputs=[plot_output]
                                     )
 
-                                # Update pymsesrc Tab
-                                # ---------------- Update pymsesrc Tab ----------------
-                                with gr.Tab("Update pymsesrc"):
-                                    gr.Markdown("### Pymsesrc Parameters")
+                                # Update amr source Tab
+                                # ---------------- Update amr source Tab ----------------
+                                with gr.Tab("Set amr source"):
+                                    gr.Markdown("### Select here which variables you want to include in the conversion")
 
-                                    py_fields = fields(cfg.pymsesrc)
+                                    py_fields = fields(cfg.amrsource)
                                     py_keys = []
                                     py_widgets = []
 
                                     for f in py_fields:
                                         f_name = f.name
-                                        f_default = getattr(cfg.pymsesrc, f_name)
+                                        f_default = getattr(cfg.amrsource, f_name)
                                         f_desc = f.metadata.get("desc", "")
 
                                         py_keys.append(f_name)
@@ -258,50 +269,50 @@ def launch_interface():
                                         widget = gr.Checkbox(label=f_desc, value=f_default)
                                         py_widgets.append(widget)
 
-                                    update_pymses_button = gr.Button("Update", variant="primary")
-                                    pymses_update_status = gr.Textbox(label="Update Status", value="No updates yet.", lines=2)
+                                    update_amrsource_button = gr.Button("Update", variant="primary")
+                                    amrsource_update_status = gr.Textbox(label="Update Status", value="No updates yet.", lines=2)
 
-                                    def update_pymsesrc_wrapper(*values):
+                                    def update_amrsource_wrapper(*values):
                                         global cfg, pipe
 
                                         # 1. Update in-memory config
                                         for key, val in zip(py_keys, values):
                                             try:
-                                                setattr(cfg.pymsesrc, key, bool(val))
+                                                setattr(cfg.amrsource, key, bool(val))
                                             except Exception as e:
                                                 return f"Failed to set '{key}': {e}", gr.update(value=None)
 
-                                        # 2. Save pymsesrc
-                                        try:
-                                            pipe.set_pymsesrc()
-                                        except Exception as e:
-                                            return f"Updated memory but failed to write file: {e}", gr.update(value=None)
+                                        # # 2. Save pymsesrc
+                                        # try:
+                                        #     pipe.set_pymsesrc()
+                                        # except Exception as e:
+                                        #     return f"Updated memory but failed to write file: {e}", gr.update(value=None)
 
-                                        # 3. Reload HTML table
-                                        try:
-                                            pymses_dict = pipe.read_pymsesrc()
-                                            new_html = dict_to_table_html(pymses_dict)
-                                            new_html = f"""
-                                            <div style="overflow:auto; max-height:400px; border:1px solid #888; border-radius:6px; padding:5px;">
-                                                {new_html}
-                                            </div>
-                                            """
-                                        except Exception as e:
-                                            return f"Updated but failed to reload table: {e}", gr.update(value=None)
+                                        # # 3. Reload HTML table
+                                        # try:
+                                        #     pymses_dict = pipe.read_pymsesrc()
+                                        #     new_html = dict_to_table_html(pymses_dict)
+                                        #     new_html = f"""
+                                        #     <div style="overflow:auto; max-height:400px; border:1px solid #888; border-radius:6px; padding:5px;">
+                                        #         {new_html}
+                                        #     </div>
+                                        #     """
+                                        # except Exception as e:
+                                        #     return f"Updated but failed to reload table: {e}", gr.update(value=None)
 
-                                        return "✔ Pymsesrc updated successfully.", gr.update(value=new_html)
+                                        return "✔ AMR source loaded successfully.", gr.update(value=new_html)
                                     
                     
-                                update_pymses_button.click(
-                                    fn=update_pymsesrc_wrapper,
+                                update_amrsource_button.click(
+                                    fn=update_amrsource_wrapper,
                                     inputs=py_widgets,
-                                    outputs=[pymses_update_status, pymsesrc_html]
+                                    outputs=[amrsource_update_status]
                                 )
 
 
 
                                 # Update Parameters Tab
-                                with gr.Tab("Update Parameters"):
+                                with gr.Tab("Set Parameters"):
                                     sim_fields = fields(cfg.sim)
                                     sim_widget_keys = []
                                     sim_widgets = []
@@ -447,7 +458,7 @@ def launch_interface():
         def on_convert():
             try:
                 pipe.convert_rasmes2radmc()
-                return "✔ Conversion complete."
+                #return "✔ Conversion complete."
             except Exception as e:
                 return f"❌ Conversion failed: {e}"
 
@@ -473,7 +484,7 @@ def launch_interface():
                 # Capture the final print statements
                 yield buffer.getvalue(); buffer.truncate(0); buffer.seek(0)
 
-                yield "✔ Conversion complete.\n"
+                #yield "✔ Conversion complete.\n"
 
             except Exception as e:
                 yield buffer.getvalue()

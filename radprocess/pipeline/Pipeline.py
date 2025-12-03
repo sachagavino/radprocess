@@ -16,27 +16,6 @@ class Pipeline:
         self.grid = Grid()
         self.configparams = ConfigParams()
 
-
-    def read_pymsesrc(self):
-        """
-        Reads pymsesrc file from the current pymses.
-        Returns a formatted string.
-        """
-        ramses_dir = self.configparams.ramsesoutput.ramses_output_dir
-        try:
-            nvar, variables, nb_dust = ramses.read.hydro_file_descriptor(ramses_dir)
-
-            text = f"nvar = {nvar}\n\nVariables:\n"
-            for idx, name in variables.items():
-                text += f"  #{idx}: {name}\n"
-
-            text += f"\nDust ratios detected: {nb_dust}\n"
-            return text
-
-        except Exception as e:
-            return f"Error reading hydro_file_descriptor.txt:\n{e}"
-        
-
     def read_hydro_descriptor(self):
         """
         Reads hydro_file_descriptor.txt from the current RAMSES directory.
@@ -98,31 +77,41 @@ class Pipeline:
 
         return config_dict
 
+    # def set_pymsesrc(self):
+    #     """
+    #     Write ~/.pymses/pymsesrc based on current configuration,
+    #     then return the Pymsesrc object so Jupyter displays it.
+    #     """
+    #     self.ndust = ramses.read.hydro_file_descriptor(
+    #         self.configparams.ramsesoutput.ramses_output_dir
+    #     )[2]
+    #     print(f'there is {ndust} dust species in the RAMSES simulation.')  
+    #     # Write the file
+    #     ramses.write.pymsesrc(self,
+    #         ndust=self.ndust,
+    #         rho=True,
+    #         dustratios=self.configparams.pymsesrc.dustratios,
+    #         vel=self.configparams.pymsesrc.vel,
+    #         bl=self.configparams.pymsesrc.bl,
+    #         br=self.configparams.pymsesrc.br,
+    #         p=self.configparams.pymsesrc.p,
+    #         xi=self.configparams.pymsesrc.xi,
+    #         phi=self.configparams.pymsesrc.phi,
+    #         g=self.configparams.pymsesrc.g,
+    #     )
+
+    #     # RETURN Pymsesrc config block → Jupyter displays it
+    #     return self.configparams.pymsesrc
+
     def set_pymsesrc(self):
         """
-        Write ~/.pymses/pymsesrc based on current configuration,
-        then return the Pymsesrc object so Jupyter displays it.
+        Write ~/.pymses/pymsesrc based on current configuration.
         """
-        ndust = ramses.read.hydro_file_descriptor(
-            self.configparams.ramsesoutput.ramses_output_dir
-        )[2]
-        print(f'there is {ndust} dust species in the RAMSES simulation.')  
+        ramses_dir = self.configparams.ramsesoutput.ramses_output_dir
+        ndust = ramses.read.hydro_file_descriptor(ramses_dir)[2]
+        print(f"There are {ndust} dust species in this RAMSES simulation.")
         # Write the file
-        ramses.write.pymsesrc(self,
-            ndust=ndust,
-            rho=True,
-            dustratios=self.configparams.pymsesrc.dustratios,
-            vel=self.configparams.pymsesrc.vel,
-            bl=self.configparams.pymsesrc.bl,
-            br=self.configparams.pymsesrc.br,
-            p=self.configparams.pymsesrc.p,
-            xi=self.configparams.pymsesrc.xi,
-            phi=self.configparams.pymsesrc.phi,
-            g=self.configparams.pymsesrc.g,
-        )
-
-        # RETURN Pymsesrc config block → Jupyter displays it
-        return self.configparams.pymsesrc
+        ramses.write.pymsesrc(ramses_dir)
     
     def set_radmc3d_dir(self, path):
         """
@@ -206,9 +195,10 @@ class Pipeline:
     def convert_rasmes2radmc(self):
         ramses_dir = self.configparams.ramsesoutput.ramses_output_dir
         radmc_dir = self.configparams.radoutput.radmc_output_dir
+        sources = self.configparams.amrsource
 
         clean = ramses_dir.strip().rstrip("/")   # remove whitespace + trailing slash
         folder = clean.rsplit("/", 1)[0] + "/"
         num = int(clean.rsplit("_", 1)[1])
 
-        self.convert.to_radmc(folder, num, radmc_dir)
+        self.convert.ramses2radmc(folder, num, radmc_dir, sources)
