@@ -1,6 +1,8 @@
 import os
 import json
 
+from dataclasses import fields
+
 from radprocess.pipeline.Grid import Grid
 from radprocess.pipeline.Convert import Convert
 from radprocess import radmc3d
@@ -16,6 +18,43 @@ class Pipeline:
         self.grid = Grid()
         self.configparams = ConfigParams()
 
+    def get_enabled_amr_fields(self):
+        enabled_vars = []
+        # Iterate through dataclass fields
+        for f in fields(self.configparams.amrsource):
+            field_name = f.name
+            enabled = getattr(self.configparams.amrsource, field_name)
+
+            if not enabled:
+                continue
+
+            meta = f.metadata or {}
+            ramses_name = meta.get("ramses_name", field_name)
+            field_type = meta.get("type", "scalar")
+
+            # ---- SPECIAL CASE: dust_ratio ----
+            dust_count = self.configparams.nb_dust
+            if ramses_name == "dust_ratio":
+                # Expand into dust_ratio_1, dust_ratio_2, ..., dust_ratio_N
+                if dust_count > 0:
+                    for i in range(1, dust_count + 1):
+                        enabled_vars.append(f"{ramses_name}_{i}")
+                # If nb_dust == 0: skip silently
+                continue
+
+            # vector
+            if field_type == "vector":
+                enabled_vars.extend([
+                    f"{ramses_name}_x",
+                    f"{ramses_name}_y",
+                    f"{ramses_name}_z",
+                ])
+            # scalar
+            else:
+                enabled_vars.append(ramses_name)
+
+        return enabled_vars
+
     def read_hydro_descriptor(self):
         """
         Reads hydro_file_descriptor.txt from the current RAMSES directory.
@@ -30,6 +69,7 @@ class Pipeline:
                 text += f"  #{idx}: {name}\n"
 
             text += f"\nDust ratios detected: {nb_dust}\n"
+            self.configparams.nb_dust = nb_dust
             return text
 
         except Exception as e:
@@ -192,13 +232,17 @@ class Pipeline:
             radmc3d.write.control(**keywords)
 
     # LOAD RAMSES DATA
-    def convert_rasmes2radmc(self):
+    def convert_rasmes(self):
         ramses_dir = self.configparams.ramsesoutput.ramses_output_dir
         radmc_dir = self.configparams.radoutput.radmc_output_dir
-        sources = self.configparams.amrsource
+        enabled_source = self.get_enabled_amr_fields()
+        nb_sizes = self.configparams.nb_dust
 
         clean = ramses_dir.strip().rstrip("/")   # remove whitespace + trailing slash
         folder = clean.rsplit("/", 1)[0] + "/"
         num = int(clean.rsplit("_", 1)[1])
 
-        self.convert.ramses2radmc(folder, num, radmc_dir, sources)
+        amr_grid = self.convert.ramses(folder, num, radmc_dir, enabled_source, nb_sizes)
+        self.grid.add_amr_grid(amr_grid)
+
+        #ultimately, there will be only one function that convert ramses to radiative friendly format, then two function that takes the created grid to write radmc3d and polaris files.

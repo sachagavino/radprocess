@@ -20,6 +20,7 @@ class Grid:
         self.isrf = []
         self.dust = []
         self.accretionheating = []
+        self.amr_grid = []
         self.radmc_grid = []
         self.polaris_grid = []
 
@@ -43,6 +44,9 @@ class Grid:
 
     def add_polaris_grid(self, polaris_grid):
         self.polaris_grid.append(polaris_grid)
+
+    def add_amr_grid(self, amr_grid):
+        self.amr_grid.append(amr_grid)
 
     def add_dust(self, dust):
         self.dust.append(dust)

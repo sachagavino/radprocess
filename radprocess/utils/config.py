@@ -232,25 +232,25 @@ class RadiativeOutput(StrictDataclass):
 @dataclass
 class AmrSource(StrictDataclass):
     rho: bool = field(default=True, 
-        metadata={'desc': r'Include the gas density field (always True)'})
+        metadata={"ramses_name": "density", "type": "scalar", 'desc': r'Include the gas density field (always True)'})
     dustratios: bool = field(default=False, 
-        metadata={'desc': r'Include the multiple dust species (if dust ratios exist)'})
+        metadata={"ramses_name": "dust_ratio", "type": "scalar", 'desc': r'Include the multiple dust species (if dust ratios exist)'})
     vel: bool = field(default=False, 
-        metadata={'desc': r'Include the velocity field'})
+        metadata={"ramses_name": "velocity", "type": "vector", 'desc': r'Include the velocity field'})
     bl: bool = field(default=False, 
-        metadata={'desc': r'Include the magnetic field (B) components'})
+        metadata={"ramses_name": "B_left", "type": "vector", 'desc': r'Include the left magnetic field (B) components'})
     br: bool = field(default=False, 
-        metadata={'desc': r'Include the radial magnetic field (B) components'})
+        metadata={"ramses_name": "B_right", "type": "vector",'desc': r'Include the right magnetic field (B) components'})
     p: bool = field(default=False, 
-        metadata={'desc': r'Include the pressure field'})
+        metadata={"ramses_name": "thermal_pressure", "type": "scalar", 'desc': r'Include the pressure field'})
     xi: bool = field(default=False, 
-        metadata={'desc': r'Include the ionization fraction field'})
+        metadata={"ramses_name": "radiative_energy",  "type": "scalar", 'desc': r'Include the ionization fraction field'})
     phi: bool = field(default=False, 
-        metadata={'desc': r'Include the gravitational potential field'})
+        metadata={"ramses_name": "passive_scalar",  "type": "scalar", 'desc': r'Include the gravitational potential field'})
     g: bool = field(default=False, 
-        metadata={'desc': r'Include the gravitational acceleration field'})
+        metadata={"ramses_name": "passive_scalar",  "type": "scalar", 'desc': r'Include the gravitational acceleration field'})
     temp: bool = field(default=False, 
-        metadata={'desc': r'Include the gas temperature field'})
+        metadata={"ramses_name": "temperature", "type": "scalar", 'desc': r'Include the gas temperature field'})
 
     def __repr__(self):  # terminal
         return fancy_repr(self)
@@ -290,6 +290,7 @@ class ConfigParams(StrictDataclass):
     radoutput: RadiativeOutput= field(default_factory=RadiativeOutput)
     amrsource: AmrSource = field(default_factory=AmrSource)
     sim: Sim = field(default_factory=Sim)
+    nb_dust: int = 0
 
     def __repr__(self):
         return (

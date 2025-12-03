@@ -96,50 +96,43 @@ cfg = pipe.configparams
 # -----------------------------
 # Core update function
 # -----------------------------
-def start_pipeline_display(ramses_dir):
-    global cfg, pipe
+def start_pipeline_display(ramses_dir, cfg, pipe):
     # Update config
     cfg.ramsesoutput.ramses_output_dir = ramses_dir
-    # Rebuild pipeline with updated config
+    # Rebuild pipeline
     pipe = Pipeline()
     pipe.configparams = cfg
 
     status_text = f"RAMSES data will be loaded from:\n{ramses_dir}\n"
 
-    # AUTO-WRITE ~/.pymses/pymsesrc -------------------------
+    # AUTO-WRITE ~/.pymses/pymsesrc
     try:
         pipe.set_pymsesrc()
     except Exception as e:
         status_text += f"\n⚠ pymsesrc write failed: {e}"
-    # -------------------------------------------------------
 
     hydro_text = pipe.read_hydro_descriptor()
     sink_text = pipe.read_sink_info()
     pymses_dict = pipe.read_pymsesrc()
 
-    # Convert sink text to rows for plotting
     lines = sink_text.strip().split("\n")
     header = lines[0].split() if lines else []
     sink_rows = [dict(zip(header, line.split())) for line in lines[1:]] if len(lines) > 1 else []
-
-    
 
     hydro_html = f"""
     <div style="overflow:auto; max-height:400px; border:1px solid #888; border-radius:6px; padding:5px;">
         <pre style="font-family: monospace; margin:0;">{hydro_text}</pre>
     </div>
     """
-
     sink_html = sink_text_to_table(sink_text)
-
     pymsesrc_html = f"""
     <div style="overflow:auto; max-height:400px; border:1px solid #888; border-radius:6px; padding:5px;">
         {dict_to_table_html(pymses_dict)}
     </div>
     """
 
-    # Return sink_rows as the 5th element
-    return status_text, hydro_html, sink_html, pymsesrc_html, sink_rows
+    return status_text, hydro_html, sink_html, pymsesrc_html, sink_rows, cfg, pipe
+
 
 
 
@@ -148,6 +141,14 @@ def start_pipeline_display(ramses_dir):
 # Gradio Layout
 # -----------------------------
 def launch_interface():
+    # 1. Define all components first
+    status_box = gr.Textbox(...)
+    hydro_html = gr.HTML(value="")
+    sink_html = gr.HTML(value="")
+    pymsesrc_html = gr.HTML(value="")
+
+
+
     with gr.Blocks(title="radprocess Interface") as demo:
 
         # ---------- Banner ----------
@@ -222,9 +223,11 @@ def launch_interface():
                                 with gr.Tab("pymsesrc"):
                                     pymsesrc_html = gr.HTML(value="", elem_id="pymsesrc_display")
 
-                    # ---------- Hidden states ----------
-                    sink_data_state = gr.State()
-                    sink_columns_state = gr.State()  # To store column names
+                        # ---------- Hidden states ----------
+                        sink_data_state = gr.State([])
+                        sink_columns_state = gr.State([])
+                        cfg_state = gr.State(cfg)
+                        pipe_state = gr.State(pipe)
 
                     # ---------- Second row: Plot + Update tabs ----------
                     with gr.Row():
@@ -272,43 +275,28 @@ def launch_interface():
                                     update_amrsource_button = gr.Button("Update", variant="primary")
                                     amrsource_update_status = gr.Textbox(label="Update Status", value="No updates yet.", lines=2)
 
-                                    def update_amrsource_wrapper(*values):
-                                        global cfg, pipe
 
+                                    def update_amrsource_wrapper(*values_and_states):
+                                        *values, cfg, pipe = values_and_states
                                         # 1. Update in-memory config
                                         for key, val in zip(py_keys, values):
                                             try:
                                                 setattr(cfg.amrsource, key, bool(val))
                                             except Exception as e:
-                                                return f"Failed to set '{key}': {e}", gr.update(value=None)
+                                                return f"❌ Failed to set '{key}': {e}"
 
-                                        # # 2. Save pymsesrc
-                                        # try:
-                                        #     pipe.set_pymsesrc()
-                                        # except Exception as e:
-                                        #     return f"Updated memory but failed to write file: {e}", gr.update(value=None)
+                                        try:
+                                            pipe = Pipeline()
+                                            pipe.configparams = cfg
+                                        except Exception as e:
+                                            return f"⚠️ Updated amr source but pipeline rebuild failed: {e}"
+                                        return "✔ AMR source updated successfully.", cfg, pipe
 
-                                        # # 3. Reload HTML table
-                                        # try:
-                                        #     pymses_dict = pipe.read_pymsesrc()
-                                        #     new_html = dict_to_table_html(pymses_dict)
-                                        #     new_html = f"""
-                                        #     <div style="overflow:auto; max-height:400px; border:1px solid #888; border-radius:6px; padding:5px;">
-                                        #         {new_html}
-                                        #     </div>
-                                        #     """
-                                        # except Exception as e:
-                                        #     return f"Updated but failed to reload table: {e}", gr.update(value=None)
-
-                                        return "✔ AMR source loaded successfully.", gr.update(value=new_html)
-                                    
-                    
                                 update_amrsource_button.click(
                                     fn=update_amrsource_wrapper,
-                                    inputs=py_widgets,
-                                    outputs=[amrsource_update_status]
+                                    inputs=py_widgets + [cfg_state, pipe_state],
+                                    outputs=[amrsource_update_status, cfg_state, pipe_state]
                                 )
-
 
 
                                 # Update Parameters Tab
@@ -369,6 +357,7 @@ def launch_interface():
                                     )
 
 
+
                 # --------- RADMC3D Tab (empty) ---------
                 with gr.Tab("RADMC3D Section"):
                     # ---------- Inner Row for RAMSES content ----------
@@ -407,40 +396,71 @@ def launch_interface():
                     )
 
 
+        def on_read_ramses(ramses_dir, cfg, pipe):
+            status_text, hydro_html_val, sink_html_val, pymsesrc_html_val, sink_rows, cfg, pipe = start_pipeline_display(ramses_dir, cfg, pipe)
+            # Extract columns for dropdowns
+            columns = list(sink_rows[0].keys()) if sink_rows else []
+            return status_text, hydro_html_val, sink_html_val, pymsesrc_html_val, sink_rows, columns, cfg, pipe
 
-        # ---------- Callback for Read RAMSES button ----------
-        def on_read_ramses(ramses_dir):
-            status, hydro_html_val, sink_html_val, pymsesrc_html_val, sink_rows = start_pipeline_display(ramses_dir)
-
-            # Extract columns from the first row of sink_rows
-            if sink_rows:
-                columns = list(sink_rows[0].keys())
-            else:
-                columns = []
-
-            return (
-                status,
-                hydro_html_val,
-                sink_html_val,
-                pymsesrc_html_val,
-                sink_rows,
-                columns  # Update sink_columns_state
-            )
-
+        # After all components are defined
         start_button.click(
             fn=on_read_ramses,
-            inputs=[ramses_dir_input],
+            inputs=[ramses_dir_input, cfg_state, pipe_state],
             outputs=[
                 status_box,
                 hydro_html,
                 sink_html,
                 pymsesrc_html,
                 sink_data_state,
-                sink_columns_state
+                sink_columns_state,
+                cfg_state,
+                pipe_state
             ]
         )
 
-        # ---------- Callback for Read RAMSES button ----------
+
+
+        # # ---------- Callback for Read RAMSES button ----------
+        # def on_read_ramses(ramses_dir, cfg, pipe):
+        #     # Update config
+        #     cfg.ramsesoutput.ramses_output_dir = ramses_dir
+        #     # Rebuild pipeline
+        #     pipe = Pipeline()
+        #     pipe.configparams = cfg
+
+        #     status_text = f"RAMSES data will be loaded from:\n{ramses_dir}\n"
+
+        #     # AUTO-WRITE ~/.pymses/pymsesrc
+        #     try:
+        #         pipe.set_pymsesrc()
+        #     except Exception as e:
+        #         status_text += f"\n⚠ pymsesrc write failed: {e}"
+
+        #     hydro_text = pipe.read_hydro_descriptor()
+        #     sink_text = pipe.read_sink_info()
+        #     pymses_dict = pipe.read_pymsesrc()
+
+        #     # Convert sink text to rows for plotting
+        #     lines = sink_text.strip().split("\n")
+        #     header = lines[0].split() if lines else []
+        #     sink_rows = [dict(zip(header, line.split())) for line in lines[1:]] if len(lines) > 1 else []
+
+        #     hydro_html = f"""
+        #     <div style="overflow:auto; max-height:400px; border:1px solid #888; border-radius:6px; padding:5px;">
+        #         <pre style="font-family: monospace; margin:0;">{hydro_text}</pre>
+        #     </div>
+        #     """
+        #     sink_html = sink_text_to_table(sink_text)
+        #     pymsesrc_html = f"""
+        #     <div style="overflow:auto; max-height:400px; border:1px solid #888; border-radius:6px; padding:5px;">
+        #         {dict_to_table_html(pymses_dict)}
+        #     </div>
+        #     """
+
+        #     # Return sink_rows + updated states
+        #     return status_text, hydro_html, sink_html, pymsesrc_html, sink_rows, cfg, pipe
+
+        # ---------- Callback for Read RADMC3D button ----------
         def on_set_radmc3d(radmc_dir):
             try:
                 info = pipe.set_radmc3d_dir(radmc_dir)
@@ -462,12 +482,7 @@ def launch_interface():
             except Exception as e:
                 return f"❌ Conversion failed: {e}"
 
-        def on_convert_stream():
-            """
-            Streams output line-by-line to the Gradio UI during conversion.
-            """
-
-            # Capture stdout
+        def on_convert_stream(cfg, pipe):
             buffer = io.StringIO()
             old_stdout = sys.stdout
             sys.stdout = buffer
@@ -475,29 +490,26 @@ def launch_interface():
             yield "Starting RAMSES → RADMC3D conversion...\n"
 
             try:
-                # Surround the conversion with our own messaging
                 print("Initializing conversion...")
                 yield buffer.getvalue(); buffer.truncate(0); buffer.seek(0)
 
+                # IMPORTANT: use updated pipeline
+                pipe.configparams = cfg
                 pipe.convert_rasmes2radmc()
 
-                # Capture the final print statements
                 yield buffer.getvalue(); buffer.truncate(0); buffer.seek(0)
-
-                #yield "✔ Conversion complete.\n"
 
             except Exception as e:
                 yield buffer.getvalue()
-
                 yield f"❌ Conversion failed: {e}\n"
 
             finally:
-                # Restore stdout no matter what
                 sys.stdout = old_stdout
+
 
         convert_button.click(
             fn=on_convert_stream,
-            inputs=[],
+            inputs=[cfg_state, pipe_state],
             outputs=convert_log
         )
 
