@@ -34,6 +34,7 @@ class Pipeline:
 
             # ---- SPECIAL CASE: dust_ratio ----
             dust_count = self.configparams.nb_dust
+
             if ramses_name == "dust_ratio":
                 # Expand into dust_ratio_1, dust_ratio_2, ..., dust_ratio_N
                 if dust_count > 0:
@@ -42,16 +43,16 @@ class Pipeline:
                 # If nb_dust == 0: skip silently
                 continue
 
-            # vector
-            if field_type == "vector":
-                enabled_vars.extend([
-                    f"{ramses_name}_x",
-                    f"{ramses_name}_y",
-                    f"{ramses_name}_z",
-                ])
-            # scalar
-            else:
-                enabled_vars.append(ramses_name)
+            # # vector
+            # if field_type == "vector":
+            #     enabled_vars.extend([
+            #         f"{ramses_name}_x",
+            #         f"{ramses_name}_y",
+            #         f"{ramses_name}_z",
+            #     ])
+            # # scalar
+            # else:
+            enabled_vars.append(ramses_name)
 
         return enabled_vars
 
@@ -231,18 +232,24 @@ class Pipeline:
         if write_control==True:
             radmc3d.write.control(**keywords)
 
-    # LOAD RAMSES DATA
     def convert_rasmes(self):
+        """
+        read RAMSES files, convert into AMR and store
+        the grid inside the amr_grid from Grid.
+        """
         ramses_dir = self.configparams.ramsesoutput.ramses_output_dir
         radmc_dir = self.configparams.radoutput.radmc_output_dir
         enabled_source = self.get_enabled_amr_fields()
         nb_sizes = self.configparams.nb_dust
+        print(nb_sizes)
+        sim_param = self.configparams.sim
 
         clean = ramses_dir.strip().rstrip("/")   # remove whitespace + trailing slash
         folder = clean.rsplit("/", 1)[0] + "/"
         num = int(clean.rsplit("_", 1)[1])
 
-        amr_grid = self.convert.ramses(folder, num, radmc_dir, enabled_source, nb_sizes)
-        self.grid.add_amr_grid(amr_grid)
+        amr_grid = self.convert.ramses(folder, num, radmc_dir, enabled_source, sim_param, nb_sizes)
+        #self.grid.add_amr_grid(amr_grid)
+        
 
         #ultimately, there will be only one function that convert ramses to radiative friendly format, then two function that takes the created grid to write radmc3d and polaris files.

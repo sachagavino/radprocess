@@ -186,26 +186,67 @@ def launch_interface():
         # <hr style="border:2px solid #333; margin-top:5px; margin-bottom:20px;">
         # """)
 
+        # ---------- Convert callback ----------
+        def on_convert():
+            try:
+                pipe.convert_rasmes()
+                #return "✔ Conversion complete."
+            except Exception as e:
+                return f"❌ Conversion failed: {e}"
+
+        def on_convert_stream(cfg, pipe):
+            buffer = io.StringIO()
+            old_stdout = sys.stdout
+            sys.stdout = buffer
+
+            yield "Starting RAMSES → AMR grid conversion...\n"
+
+            try:
+                print("Initializing conversion...")
+                yield buffer.getvalue(); buffer.truncate(0); buffer.seek(0)
+
+                # IMPORTANT: use updated pipeline
+                pipe.configparams = cfg
+                pipe.convert_rasmes()
+
+                yield buffer.getvalue(); buffer.truncate(0); buffer.seek(0)
+
+            except Exception as e:
+                yield buffer.getvalue()
+                yield f"❌ Conversion failed: {e}\n"
+
+            finally:
+                sys.stdout = old_stdout
+
+
         # ---------- Main Row ----------
         with gr.Row():
-            # Main Tabs: RAMSES section + RADMC3D section
+            # Main Tabs: RAMSES section
             with gr.Tabs() as main_tabs_row:
 
                 # --------- RAMSES Tab ---------
                 with gr.Tab("RAMSES Section"):
 
+                    # ---------- Hidden states ----------
+                    sink_data_state = gr.State([])
+                    sink_columns_state = gr.State([])
+                    cfg_state = gr.State(cfg)
+                    pipe_state = gr.State(pipe)
+
                     # ---------- Inner Row for RAMSES content ----------
                     with gr.Row():
-                        # Left column: input + button + status
+
+                        # ===== LEFT COLUMN =====
                         with gr.Column(scale=1):
+
                             ramses_dir_input = gr.Textbox(
                                 label="Enter the RAMSES output directory (absolute path recommended):",
-                                value="ramses_outputs/",
+                                value=None,
                                 lines=1,
                                 placeholder="enter path to RAMSES output here/"
                             )
 
-                            start_button = gr.Button("Read RAMSES", variant="primary")
+                            start_button = gr.Button("Load RAMSES output", variant="primary")
 
                             status_box = gr.Textbox(
                                 label="Status",
@@ -213,29 +254,26 @@ def launch_interface():
                                 lines=4
                             )
 
-                        # Right column: hydro/sink/pymsesrc tabs
+                        # ===== RIGHT COLUMN =====
                         with gr.Column(scale=2):
+
                             with gr.Tabs() as ram_tabs:
+
+                                # --- hydro descriptor ---
                                 with gr.Tab("hydro_file_descriptor"):
                                     hydro_html = gr.HTML(value="", elem_id="hydro_display")
+
+                                # --- sink info ---
                                 with gr.Tab("sink info"):
                                     sink_html = gr.HTML(value="", elem_id="sink_display")
+
+                                # --- pymsesrc ---
                                 with gr.Tab("pymsesrc"):
                                     pymsesrc_html = gr.HTML(value="", elem_id="pymsesrc_display")
 
-                        # ---------- Hidden states ----------
-                        sink_data_state = gr.State([])
-                        sink_columns_state = gr.State([])
-                        cfg_state = gr.State(cfg)
-                        pipe_state = gr.State(pipe)
-
-                    # ---------- Second row: Plot + Update tabs ----------
-                    with gr.Row():
-                        with gr.Column(scale=3):
-                            with gr.Tabs() as plot_tabs:
-
-                                # Existing Plot Tab
+                                # --- NEW: Plot sinks ---
                                 with gr.Tab("Plot sinks"):
+
                                     x_dropdown = gr.Dropdown(choices=[], label="X Column", allow_custom_value=True)
                                     y_dropdown = gr.Dropdown(choices=[], label="Y Column", allow_custom_value=True)
                                     plot_button = gr.Button("Plot", variant="secondary")
@@ -252,6 +290,34 @@ def launch_interface():
                                         inputs=[sink_data_state, x_dropdown, y_dropdown],
                                         outputs=[plot_output]
                                     )
+
+
+
+
+
+                    # ---------- Second row: Plot + Update tabs ----------
+                    with gr.Row():
+                        with gr.Column(scale=3):
+                            with gr.Tabs() as plot_tabs:
+
+                                # # Existing Plot Tab
+                                # with gr.Tab("Plot sinks"):
+                                #     x_dropdown = gr.Dropdown(choices=[], label="X Column", allow_custom_value=True)
+                                #     y_dropdown = gr.Dropdown(choices=[], label="Y Column", allow_custom_value=True)
+                                #     plot_button = gr.Button("Plot", variant="secondary")
+                                #     plot_output = gr.Plot()
+
+                                #     def generate_sink_plot(sink_rows, x_col, y_col):
+                                #         if not sink_rows or not x_col or not y_col:
+                                #             return None
+                                #         fig = plot_sink_columns(sink_rows, x_col, y_col)
+                                #         return fig
+
+                                #     plot_button.click(
+                                #         fn=generate_sink_plot,
+                                #         inputs=[sink_data_state, x_dropdown, y_dropdown],
+                                #         outputs=[plot_output]
+                                #     )
 
                                 # Update amr source Tab
                                 # ---------------- Update amr source Tab ----------------
@@ -298,14 +364,13 @@ def launch_interface():
                                     outputs=[amrsource_update_status, cfg_state, pipe_state]
                                 )
 
-
                                 # Update Parameters Tab
                                 with gr.Tab("Set Parameters"):
+                                    gr.Markdown("### Simulation Parameters")
+
                                     sim_fields = fields(cfg.sim)
                                     sim_widget_keys = []
                                     sim_widgets = []
-
-                                    gr.Markdown("### Simulation Parameters")
 
                                     for f in sim_fields:
                                         f_name = f.name
@@ -327,8 +392,11 @@ def launch_interface():
                                     update_sim_button = gr.Button("Update", variant="primary")
                                     sim_update_status = gr.Textbox(label="Update Status", value="No updates yet.", lines=2)
 
-                                    def update_sim_params_wrapper(*values):
-                                        global cfg, pipe
+                                    def update_sim_params_wrapper(*values_and_states):
+                                        # values_and_states = [val1, val2, ..., cfg, pipe]
+                                        *values, cfg, pipe = values_and_states
+
+                                        # 1) Update in-memory config object
                                         for key, val in zip(sim_widget_keys, values):
                                             f_decl = next(ff for ff in sim_fields if ff.name == key)
                                             expected = f_decl.type
@@ -343,24 +411,30 @@ def launch_interface():
                                                     setattr(cfg.sim, key, val)
                                             except Exception as e:
                                                 return f"❌ Failed to set '{key}': {e}"
+
+                                        # 2) Recreate pipeline object with updated config
                                         try:
                                             pipe = Pipeline()
                                             pipe.configparams = cfg
                                         except Exception as e:
                                             return f"⚠️ Updated params but pipeline rebuild failed: {e}"
-                                        return "✔ Simulation parameters updated successfully."
+
+                                        # 3) Return status + updated states so Gradio stores them
+                                        return "✔ Simulation parameters updated successfully.", cfg, pipe
+
 
                                     update_sim_button.click(
                                         fn=update_sim_params_wrapper,
-                                        inputs=sim_widgets,
-                                        outputs=sim_update_status
+                                        inputs=sim_widgets + [cfg_state, pipe_state],
+                                        outputs=[sim_update_status, cfg_state, pipe_state]
                                     )
+
 
 
 
                 # --------- RADMC3D Tab (empty) ---------
                 with gr.Tab("RADMC3D Section"):
-                    # ---------- Inner Row for RAMSES content ----------
+                    # ---------- Inner Row for RADMC3D content ----------
                     with gr.Row():
                         # Left column: input + button + status
                         with gr.Column(scale=1):
@@ -382,18 +456,144 @@ def launch_interface():
 
                 # --------- POLARIS Tab (empty) ---------
                 with gr.Tab("POLARIS Section"):
-                    gr.Markdown("*(This tab is currently empty and reserved for POLARIS controls.)*")
+                    # ---------- Inner Row for POLARIS content ----------
+                    with gr.Row():
+                        # Left column: input + button + status
+                        with gr.Column(scale=1):
+                            polaris_dir_input = gr.Textbox(
+                                label="Enter the POLARIS output directory (absolute path recommended):",
+                                value="polaris_outputs/",
+                                lines=1,
+                                placeholder="enter path to POLARIS output here/"
+                            )
 
-                # --------- PIPLINE Tab ---------
+                            set_polaris_button = gr.Button("Set POLARIS directory", variant="primary")
+
+
+                            polaris_status_box = gr.Textbox(
+                                label="Status",
+                                value="Awaiting input...",
+                                lines=4
+                            )
+
+                # --------- PIPELINE Tab ---------
                 with gr.Tab("PIPELINE"):
-                    gr.Markdown("### Run RAMSES → RADMC3D Conversion")
-                    convert_button = gr.Button("Convert to RADMC3D", variant="primary")
-                    convert_log = gr.Textbox(
-                        label="Live Conversion Log",
-                        value="Logs will appear here...",
-                        lines=20,
-                        interactive=False
+
+                    BUTTON_VISIBILITY = {
+                        "Create RAMSES grid": True,
+                        "Convert to RADMC3D": False,
+                        "Convert to POLARIS": False,
+                        "Run one photon (POLARIS)": False,
+                        "Run MCTHERM (RADMC3D)": False,
+                        "Merge temperatures": False,
+                        "Make image": False,
+                    }
+
+                    pipeline_actions = list(BUTTON_VISIBILITY.keys())
+                    MAX_STEPS = 10
+
+                    step_count = gr.State(0)
+
+
+                    with gr.Row():
+
+                        # ===== LEFT COLUMN =====
+                        with gr.Column(scale=1.5):
+
+                            gr.Markdown("### Build pipeline. Select actions.")
+
+                            rows = []
+                            dropdowns = []
+                            buttons = []
+
+                            for i in range(MAX_STEPS):
+
+                                # 🔹 Group keeps dropdown & button together
+                                with gr.Group(visible=False) as row:
+
+                                    # --- OPEN BOX ---
+                                    gr.HTML(
+                                        "<div style='border:1px solid #555;"
+                                        "padding:10px;"
+                                        "border-radius:8px;"
+                                        "margin-bottom:8px;'>"
+                                    )
+
+                                    with gr.Row():
+
+                                        dd = gr.Dropdown(
+                                            choices=pipeline_actions,
+                                            label=f"Action {i+1}",
+                                            value=None,
+                                            interactive=True
+                                        )
+
+                                        btn = gr.Button(
+                                            "Create RAMSES grid",
+                                            visible=False
+                                        )
+
+                                    # --- CLOSE BOX ---
+                                    gr.HTML("</div>")
+
+                                rows.append(row)
+                                dropdowns.append(dd)
+                                buttons.append(btn)
+
+                            add_step_button = gr.Button("➕ Add action", variant="huggingface")
+
+                        # ===== RIGHT COLUMN =====
+                        with gr.Column(scale=1.5):
+                            convert_log = gr.Textbox(
+                                label="Live Conversion Log",
+                                value="Logs will appear here...",
+                                lines=20,
+                                interactive=False
+                            )
+
+
+                    # === increment step count ===
+                    def add_step(n):
+                        if n < MAX_STEPS:
+                            n += 1
+                        return n
+
+                    add_step_button.click(
+                        fn=add_step,
+                        inputs=[step_count],
+                        outputs=[step_count]
                     )
+
+
+                    # === show rows up to step_count ===
+                    def update_visibility(n):
+                        return [gr.update(visible=(i < n)) for i in range(MAX_STEPS)]
+
+                    step_count.change(
+                        fn=update_visibility,
+                        inputs=[step_count],
+                        outputs=rows
+                    )
+
+
+                    # === toggle button per dropdown (lambda binding FIXED) ===
+                    for dd, btn in zip(dropdowns, buttons):
+
+                        dd.change(
+                            fn=lambda a, b=btn: gr.update(
+                                visible=(a == "Create RAMSES grid")
+                            ),
+                            inputs=[dd],
+                            outputs=[btn]
+                        )
+
+                        btn.click(
+                            fn=on_convert_stream,
+                            inputs=[cfg_state, pipe_state],
+                            outputs=convert_log
+                        )
+
+
 
 
         def on_read_ramses(ramses_dir, cfg, pipe):
@@ -417,6 +617,80 @@ def launch_interface():
                 pipe_state
             ]
         )
+
+
+
+
+
+        # ---------- Callback for Read RADMC3D button ----------
+        def on_set_radmc3d(radmc_dir, cfg, pipe):
+            try:
+                # ensure pipeline uses the provided cfg
+                pipe.configparams = cfg
+                info = pipe.set_radmc3d_dir(radmc_dir)
+                return info, cfg, pipe
+            except Exception as e:
+                return f"Error: {e}", cfg, pipe
+
+        set_radmc3d_button.click(
+            fn=on_set_radmc3d,
+            inputs=[radmc3d_dir_input, cfg_state, pipe_state],
+            outputs=[radmc_status_box, cfg_state, pipe_state]
+        )
+
+
+        # ---------- Callback for Read POLARIS button ----------
+        def on_set_polaris(polaris_dir, cfg, pipe):
+            try:
+                # ensure pipeline uses the provided cfg
+                pipe.configparams = cfg
+                info = pipe.set_polaris_dir(polaris_dir)
+                return info, cfg, pipe
+            except Exception as e:
+                return f"Error: {e}", cfg, pipe
+
+        set_polaris_button.click(
+            fn=on_set_polaris,
+            inputs=[polaris_dir_input, cfg_state, pipe_state],
+            outputs=[polaris_status_box, cfg_state, pipe_state]
+        )
+
+
+
+        # create_amr_button.click(
+        #     fn=on_convert_stream,
+        #     inputs=[cfg_state, pipe_state],
+        #     outputs=convert_log
+        # )
+
+
+        # ---------- Update dropdowns when column names are ready ----------
+        def update_dropdowns(columns):
+            if not columns:
+                return gr.update(choices=[], value=None), gr.update(choices=[], value=None)
+            return (
+                gr.update(choices=columns, value=columns[0]),
+                gr.update(choices=columns, value=columns[1] if len(columns) > 1 else columns[0])
+            )
+
+        sink_columns_state.change(
+            fn=update_dropdowns,
+            inputs=[sink_columns_state],
+            outputs=[x_dropdown, y_dropdown]
+        )
+
+    demo.launch(theme=gr.themes.Citrus(), share=True)
+    return demo
+
+
+
+# -----------------------------
+# MAIN
+# -----------------------------
+if __name__ == "__main__":
+    demo = launch_interface()
+    demo.launch()
+
 
 
 
@@ -459,83 +733,3 @@ def launch_interface():
 
         #     # Return sink_rows + updated states
         #     return status_text, hydro_html, sink_html, pymsesrc_html, sink_rows, cfg, pipe
-
-        # ---------- Callback for Read RADMC3D button ----------
-        def on_set_radmc3d(radmc_dir):
-            try:
-                info = pipe.set_radmc3d_dir(radmc_dir)
-                return info
-            except Exception as e:
-                return f"Error: {e}"
-            
-        set_radmc3d_button.click(
-            fn=on_set_radmc3d,
-            inputs=[radmc3d_dir_input],
-            outputs=[radmc_status_box]
-        )
-
-        # ---------- Convert to RADMC3D callback ----------
-        def on_convert():
-            try:
-                pipe.convert_rasmes2radmc()
-                #return "✔ Conversion complete."
-            except Exception as e:
-                return f"❌ Conversion failed: {e}"
-
-        def on_convert_stream(cfg, pipe):
-            buffer = io.StringIO()
-            old_stdout = sys.stdout
-            sys.stdout = buffer
-
-            yield "Starting RAMSES → RADMC3D conversion...\n"
-
-            try:
-                print("Initializing conversion...")
-                yield buffer.getvalue(); buffer.truncate(0); buffer.seek(0)
-
-                # IMPORTANT: use updated pipeline
-                pipe.configparams = cfg
-                pipe.convert_rasmes2radmc()
-
-                yield buffer.getvalue(); buffer.truncate(0); buffer.seek(0)
-
-            except Exception as e:
-                yield buffer.getvalue()
-                yield f"❌ Conversion failed: {e}\n"
-
-            finally:
-                sys.stdout = old_stdout
-
-
-        convert_button.click(
-            fn=on_convert_stream,
-            inputs=[cfg_state, pipe_state],
-            outputs=convert_log
-        )
-
-        # ---------- Update dropdowns when column names are ready ----------
-        def update_dropdowns(columns):
-            if not columns:
-                return gr.update(choices=[], value=None), gr.update(choices=[], value=None)
-            return (
-                gr.update(choices=columns, value=columns[0]),
-                gr.update(choices=columns, value=columns[1] if len(columns) > 1 else columns[0])
-            )
-
-        sink_columns_state.change(
-            fn=update_dropdowns,
-            inputs=[sink_columns_state],
-            outputs=[x_dropdown, y_dropdown]
-        )
-
-    demo.launch(theme=gr.themes.Citrus(), share=True)
-    return demo
-
-
-
-# -----------------------------
-# MAIN
-# -----------------------------
-if __name__ == "__main__":
-    demo = launch_interface()
-    demo.launch()
