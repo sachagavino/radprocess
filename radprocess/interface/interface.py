@@ -189,7 +189,7 @@ def launch_interface():
         # ---------- Convert callback ----------
         def on_convert():
             try:
-                pipe.convert_rasmes()
+                pipe.load_ramses()
                 #return "✔ Conversion complete."
             except Exception as e:
                 return f"❌ Conversion failed: {e}"
@@ -207,7 +207,7 @@ def launch_interface():
 
                 # IMPORTANT: use updated pipeline
                 pipe.configparams = cfg
-                pipe.convert_rasmes()
+                pipe.load_ramses()
 
                 yield buffer.getvalue(); buffer.truncate(0); buffer.seek(0)
 

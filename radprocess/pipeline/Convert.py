@@ -10,6 +10,7 @@ import os
 import importlib
 
 import numpy as np
+import zarr
 
 import pymses
 from pymses.utils import constants as C
@@ -38,6 +39,13 @@ class Convert:
         i = 0
         #----------------------------------------------------
         snap = pymses.RamsesOutput(ramses_folder, ramses_num)
+
+        if nb_sizes > 0 and nb_sizes != snap.info["ndust"]:
+            raise ValueError(
+                "Mismatch between grain sizes in hydro_file_descriptor.txt "
+                "and snap.info['ndust']"
+            )
+
         snap.amr_fields()
         mp = snap.info["unit_density"].express(C.g_cc) #nu*mu in gcc
 
@@ -55,9 +63,10 @@ class Convert:
         cell_source.ndim
         cells = cell_source.flatten()
         output = {} #OR = list size of amr + 4 for dx x y z level
-        unit_l = snap.info["unit_length"].express(C.m) # Cell lengths
+        unit_l = snap.info["unit_length"].express(C.m) # Cell lengths 
         # max. number of cells
         output["dx"] = cells.get_sizes()*unit_l
+        
         nr_of_cells = len(output["dx"])
         # Original cell positions (from 0 to 1) converted into uint length)
         output["x"] = cells.points[:,0]*unit_l
@@ -66,21 +75,36 @@ class Convert:
         # level of each cell
         output["level"]=np.log2(unit_l/output["dx"])
 
+        #---DENSITY SECTION:---
+        output["density"]  = cells["density"]
+        if nb_sizes > 0:
+            dustratios = np.zeros((nb_sizes, nr_of_cells))
+            # for i in range(1,nb_sizes+1):
+            #     output["dust_enrich{:d}".format(i)]  = cells["dust_ratio_{:d}".format(i)]  
+            for i in range(1,nb_sizes+1):
+                dustratios[i-1,:] = cells["dust_ratio_{:d}".format(i)]/correction_factor
+            
+            #useful because ramses dumps the total density = rho_g + rho_d in units of mu micron.(so density is not the gas density)
+            #for the dust, ramses actually provides dust enrichment (not dust-to-gas mass ratio)
+            epsilon_tot = np.zeros(output["dust_enrich1"].shape)
+            for i in range(1,nb_sizes+1):
+                epsilon_tot+=output["dust_enrich{:d}".format(i)]
+            correction_factor = 1-epsilon_tot
+            output["gas_massdensity"] = mp*correction_factor*output["density"] # actual gas density  
+            #create new array for dust-to-gas mass ratio
 
+            # # correct dust to gas mass ratios
+            # for i in range(1,nb_sizes+1):
+            #     output[f'dust_enrich{(i + 1):d}'] = output["dust_enrich{:d}".format(i)]/correction_factor
+            
+        else:
+            output["gas_massdensity"]  = output["density"]*mp # in unit of RAMSES here
+            output['dust_massdensity'] = output['gas_massdensity'] * 1e-02
+            
 
-        # #DENSITY SECTION, always true.
-        # output["dens"]  = cells["density"] # in unit of RAMSES here
-        # for i in range(1,nb_sizes+1):
-        #     output["dustratio{:d}".format(i)]  = cells["dust_ratio_{:d}".format(i)]  
-        # if nb_sizes > 0:
-        #     #useful because ramses dumps the total density = rho_g + rho_d in units of mu micron.(so density is not the gas density)
-        #     #for the dust, ramses actually provides dust enrichment (not dust to gas mass ratio)
-        #     epsilon_tot = np.zeros(output["dustratio1"].shape)
-        #     for i in range(1,nb_sizes+1):
-        #         epsilon_tot+=output["dustratio{:d}".format(i)]
-        #     correction_factor = 1-epsilon_tot
-        #     rho_gas = mp*output["dens"]*correction_factor # actual gas density  
-
+        print("type of output[dx]: ", type(output["dx"]))
+        print("type of output[gas_massdensity]: ", type(output["gas_massdensity"]))
+        print("type of output[dust_enrich1]: ", type(output["dust_enrich1"]))
         # #create new array for dust-to-gas mass ratio
         # dustratios = np.zeros((nb_sizes, nr_of_cells))
 
@@ -102,9 +126,8 @@ class Convert:
         #add condition regarding the content of source (T, P, velocity, etc.)
 
 
-
-        amr_grid = 0
-        return amr_grid #radiative friendly format for inside Pipeline.py, so it is stored in Grid, then used to write radmc3d.inp files.
+        z_dustratios = zarr.array(dustratios)
+        return z_dustratios #radiative friendly format for inside Pipeline.py, so it is stored in Grid, then used to write radmc3d.inp files.
         
 
     def ramses2polaris(self):

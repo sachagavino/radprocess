@@ -232,7 +232,7 @@ class Pipeline:
         if write_control==True:
             radmc3d.write.control(**keywords)
 
-    def convert_rasmes(self):
+    def load_ramses(self):
         """
         read RAMSES files, convert into AMR and store
         the grid inside the amr_grid from Grid.
@@ -241,7 +241,6 @@ class Pipeline:
         radmc_dir = self.configparams.radoutput.radmc_output_dir
         enabled_source = self.get_enabled_amr_fields()
         nb_sizes = self.configparams.nb_dust
-        print(nb_sizes)
         sim_param = self.configparams.sim
 
         clean = ramses_dir.strip().rstrip("/")   # remove whitespace + trailing slash
