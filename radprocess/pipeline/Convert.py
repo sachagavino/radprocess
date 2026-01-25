@@ -38,6 +38,7 @@ class Convert:
         fields = []
         i = 0
         #----------------------------------------------------
+        has_dust = any("dust_ratio" in s for s in source)
         snap = pymses.RamsesOutput(ramses_folder, ramses_num)
 
         if nb_sizes > 0 and nb_sizes != snap.info["ndust"]:
@@ -77,20 +78,23 @@ class Convert:
 
         #---DENSITY SECTION:---
         output["density"]  = cells["density"]
-        if nb_sizes > 0:
+        if has_dust:
             dustratios = np.zeros((nb_sizes, nr_of_cells))
-            # for i in range(1,nb_sizes+1):
-            #     output["dust_enrich{:d}".format(i)]  = cells["dust_ratio_{:d}".format(i)]  
+            for i in range(1,nb_sizes+1):
+                output["dust_enrich{:d}".format(i)]  = cells["dust_ratio_{:d}".format(i)]  
+
+            epsilon_tot = np.zeros(output["dust_enrich1"].shape)
+            for i in range(1,nb_sizes+1):
+                epsilon_tot+=output["dust_enrich{:d}".format(i)]
+            correction_factor = 1-epsilon_tot
+            output["gas_massdensity"] = mp*correction_factor*output["density"] # actual gas density 
+        
             for i in range(1,nb_sizes+1):
                 dustratios[i-1,:] = cells["dust_ratio_{:d}".format(i)]/correction_factor
             
             #useful because ramses dumps the total density = rho_g + rho_d in units of mu micron.(so density is not the gas density)
             #for the dust, ramses actually provides dust enrichment (not dust-to-gas mass ratio)
-            epsilon_tot = np.zeros(output["dust_enrich1"].shape)
-            for i in range(1,nb_sizes+1):
-                epsilon_tot+=output["dust_enrich{:d}".format(i)]
-            correction_factor = 1-epsilon_tot
-            output["gas_massdensity"] = mp*correction_factor*output["density"] # actual gas density  
+ 
             #create new array for dust-to-gas mass ratio
 
             # # correct dust to gas mass ratios
@@ -102,9 +106,6 @@ class Convert:
             output['dust_massdensity'] = output['gas_massdensity'] * 1e-02
             
 
-        print("type of output[dx]: ", type(output["dx"]))
-        print("type of output[gas_massdensity]: ", type(output["gas_massdensity"]))
-        print("type of output[dust_enrich1]: ", type(output["dust_enrich1"]))
         # #create new array for dust-to-gas mass ratio
         # dustratios = np.zeros((nb_sizes, nr_of_cells))
 
