@@ -19,6 +19,13 @@ class Pipeline:
         self.configparams = ConfigParams()
 
     def get_enabled_amr_fields(self):
+
+        # --- Enforce dependencies ---
+        if getattr(self.configparams.amrsource, "temp", False):
+            if not getattr(self.configparams.amrsource, "p", False):
+                print("NOTE: 'temp' requires 'pressure' → enabling pressure automatically.")
+                self.configparams.amrsource.p = True
+
         enabled_vars = []
         # Iterate through dataclass fields
         for f in fields(self.configparams.amrsource):
