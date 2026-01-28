@@ -233,10 +233,14 @@ class RadiativeOutput(StrictDataclass):
 class AmrSource(StrictDataclass):
     rho: bool = field(default=True, 
         metadata={"ramses_name": "density", "type": "scalar", 'desc': r'Include the gas density field (always True)'})
+    fluiddens: bool = field(default=False, 
+        metadata={"ramses_name": "fluid_density", "type": "scalar", 'desc': r'Include the multiple fluid densities (if they exist)'})
     dustratios: bool = field(default=False, 
-        metadata={"ramses_name": "dust_ratio", "type": "scalar", 'desc': r'Include the multiple dust species (if dust ratios exist)'})
+        metadata={"ramses_name": "dust_ratio", "type": "scalar", 'desc': r'Include the multiple dust ratios (if they exist)'})
     vel: bool = field(default=False, 
         metadata={"ramses_name": "velocity", "type": "vector", 'desc': r'Include the velocity field'})
+    fluidvel: bool = field(default=False, 
+        metadata={"ramses_name": "fluid_v", "type": "vector", 'desc': r'Include the fluid velocity field (if they exist)'})
     bl: bool = field(default=False, 
         metadata={"ramses_name": "B_left", "type": "vector", 'desc': r'Include the left magnetic field (B) components'})
     br: bool = field(default=False, 

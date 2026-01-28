@@ -50,6 +50,14 @@ class Pipeline:
                 # If nb_dust == 0: skip silently
                 continue
 
+            if ramses_name == "fluid_density":
+                # Expand into fluid_density_1, fluid_density_2, ..., fluid_density_N
+                if dust_count > 0:
+                    for i in range(1, dust_count + 1):
+                        enabled_vars.append(f"{ramses_name}_{i}")
+                # If nb_dust == 0: skip silently
+                continue
+
             # # vector
             # if field_type == "vector":
             #     enabled_vars.extend([
@@ -82,6 +90,34 @@ class Pipeline:
 
         except Exception as e:
             return f"Error reading hydro_file_descriptor.txt:\n{e}"
+
+    def read_other_file_descriptor(self):
+        """
+        Reads other *_file_descriptor.txt (mf_, mp_, etc.) from RAMSES directory.
+        If found, overrides nb_dust using number of fluids.
+        """
+        ramses_dir = self.configparams.ramsesoutput.ramses_output_dir
+
+        try:
+            nvar, variables, nb_fluids = ramses.read.other_file_descriptor(ramses_dir)
+
+            if nvar is None:
+                return "No additional *_file_descriptor.txt found."
+
+            text = f"nvar = {nvar}\n\nVariables:\n"
+            for idx, name in variables.items():
+                text += f"  #{idx}: {name}\n"
+
+            text += f"\nFluids detected: {nb_fluids}\n"
+
+            # IMPORTANT: override hydro result
+            self.configparams.nb_dust = nb_fluids
+
+            return text
+
+        except Exception as e:
+            return f"Error reading other file_descriptor.txt:\n{e}"
+
         
 
     def read_sink_info(self):
@@ -156,8 +192,8 @@ class Pipeline:
         Write ~/.pymses/pymsesrc based on current configuration.
         """
         ramses_dir = self.configparams.ramsesoutput.ramses_output_dir
-        ndust = ramses.read.hydro_file_descriptor(ramses_dir)[2]
-        print(f"There are {ndust} dust species in this RAMSES simulation.")
+        #ndust = ramses.read.hydro_file_descriptor(ramses_dir)[2]
+        #print(f"There are {ndust} dust species in this RAMSES simulation.")
         # Write the file
         ramses.write.pymsesrc(ramses_dir)
     

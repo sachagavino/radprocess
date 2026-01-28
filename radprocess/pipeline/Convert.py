@@ -8,9 +8,11 @@ ________________________________________________________________________________
 """
 import os
 import importlib
+from pathlib import Path
 
 import numpy as np
 import zarr
+from numcodecs import Blosc
 
 import pymses
 from pymses.utils import constants as C
@@ -25,10 +27,17 @@ from radprocess.constants.constants import Ggram, kbol, pc, amu
 
 class Convert:
 
-    def write_amr_to_zarr(output, store_path="amr_grid.zarr"):
+    def write_amr_to_zarr(self, 
+                          output, 
+                          store_path="amr_grid.zarr", 
+                          has_temp=False, 
+                          has_velocity=False, 
+                          has_ratio=False,
+                          has_fluids=False,
+                          has_fluid_v=False):
         """
-        args: the output of RAMSES converted by PyMses. 
-        output: store in Zarr format the RAMSES outputs.
+        args: the output list of RAMSES converted by PyMses. 
+        output: RAMSES outputs cleanly stored in Zarr format for efficient use.
         """
 
         root = zarr.open(store_path, mode="w")
@@ -36,33 +45,92 @@ class Convert:
         N = output["x"].shape[0]
 
         # Scalars
-        scalar_fields = [
-            "Tgas", "Tdust", "x", "y", "z", "dx", "level", "density"
-        ]
+        if has_temp:
+            scalar_fields = [
+                "Tgas", "Tdust", "x", "y", "z", "dx", "level", "density"
+            ]
+        else:
+            scalar_fields = [
+                "x", "y", "z", "dx", "level", "density"
+            ]        
 
         for name in scalar_fields:
+            arr = output[name]
             root.create_dataset(
                 name,
-                data=output[name],
+                shape=arr.shape,
+                dtype=arr.dtype,
+                data=arr,
                 chunks=(100_000,),
-                compressor=zarr.Blosc(cname="zstd", clevel=3),
+                compressor=Blosc(cname="zstd", clevel=3, shuffle=Blosc.BITSHUFFLE),
             )
 
-        # Vector field
-        root.create_dataset(
-            "velocity",
-            data=output["velocity"],
-            chunks=(50_000, 3),
-            compressor=zarr.Blosc(cname="zstd", clevel=3),
-        )
+            # root.create_dataset(
+            #     name,
+            #     data=output[name],
+            #     chunks=(100_000,),
+            #     compressor=Blosc(cname="zstd", clevel=3),
+            # )
+
+
+        # Velocity field
+        if has_velocity:
+            arr = output["velocity"]
+            root.create_dataset(
+                "velocity",
+                shape=arr.shape,
+                dtype=arr.dtype,
+                data=arr,
+                chunks=(50_000, 3),
+                compressor=Blosc(cname="zstd", clevel=3, shuffle=Blosc.BITSHUFFLE),
+            )
+
+
+        # Fluid velocity field
+        if has_fluid_v:
+            arr = output["fluid_v"]
+            root.create_dataset(
+                "velocity",
+                shape=arr.shape,
+                dtype=arr.dtype,
+                data=arr,
+                chunks=(50_000, 3),
+                compressor=Blosc(cname="zstd", clevel=3, shuffle=Blosc.BITSHUFFLE),
+            )
+
 
         # Dust ratios
-        root.create_dataset(
-            "dust_ratio",
-            data=output["dust_ratio"],
-            chunks=(50_000, output["dust_ratio"].shape[1]),
-            compressor=zarr.Blosc(cname="zstd", clevel=3),
-        )
+        if has_ratio:
+            arr = output["dust_ratio"]
+
+            root.create_dataset(
+                "dust_ratio",
+                shape=arr.shape,
+                dtype=arr.dtype,
+                data=arr,
+                chunks=(50_000, arr.shape[1]),
+                compressor=Blosc(cname="zstd", clevel=3, shuffle=Blosc.BITSHUFFLE),
+            )
+
+        # Fluid density
+        if has_fluids:
+            arr = output["fluid_density"]
+
+            root.create_dataset(
+                "fluid_density",
+                shape=arr.shape,
+                dtype=arr.dtype,
+                data=arr,
+                chunks=(50_000, arr.shape[1]),
+                compressor=Blosc(cname="zstd", clevel=3, shuffle=Blosc.BITSHUFFLE),
+            )
+
+            # root.create_dataset(
+            #     "dust_ratio",
+            #     data=output["dust_ratio"],
+            #     chunks=(50_000, output["dust_ratio"].shape[1]),
+            #     compressor=Blosc(cname="zstd", clevel=3),
+            # )
 
         root.attrs["n_cells"] = N
 
@@ -70,14 +138,11 @@ class Convert:
 
 
 
-
-
-
-    def ramses(self, ramses_folder, ramses_num, radmc_dir, source, sim_param, nb_sizes):
+    def ramses(self, ramses_dir, ramses_num, radmc_dir, source, sim_param, nb_sizes):
         importlib.reload(pymses) # Reload pymses to clear internal caches. Another problem with Pymses.
 
         print(f"\n=== New RAMSES Conversion ===")
-        print(f"Folder: {ramses_folder}")
+        print(f"RAMSES Folder: {ramses_dir}")
         print(f"Output: {ramses_num}")
         print(f"Dust species detected: {nb_sizes}")
         print(f"Enabled AMR fields: {source}\n")
@@ -87,19 +152,21 @@ class Convert:
         fields = []
         i = 0
         #----------------------------------------------------
-        has_dust = any("dust_ratio" in s for s in source)
+        has_fluids = any("fluid_density" in s for s in source)
+        has_ratio = any("dust_ratio" in s for s in source)
         has_velocity = any("velocity" in s for s in source)
+        has_fluid_v = any("fluid_v" in s for s in source)
         has_bfield = any("B_" in s for s in source)
         has_pressure = any("pressure" in s for s in source)
         has_temp = any("temperature" in s for s in source)
 
-        snap = pymses.RamsesOutput(ramses_folder, ramses_num)
+        snap = pymses.RamsesOutput(ramses_dir, ramses_num)
 
-        if nb_sizes > 0 and nb_sizes != snap.info["ndust"]:
-            raise ValueError(
-                "Mismatch between grain sizes in hydro_file_descriptor.txt "
-                "and snap.info['ndust']"
-            )
+        # if nb_sizes > 0 and nb_sizes != snap.info["ndust"]:
+        #     raise ValueError(
+        #         "Mismatch between grain sizes in hydro_file_descriptor.txt "
+        #         "and snap.info['ndust']"
+        #     )
 
         snap.amr_fields()
         mp = snap.info["unit_density"].express(C.g_cc) #nu*mu in gcc
@@ -130,39 +197,81 @@ class Convert:
         # level of each cell
         output["level"]=np.log2(unit_l/output["dx"])
 
-        #---DENSITY SECTION:---
-        output["density"]  = cells["density"]
-        if has_dust:
-            dustratios = np.zeros((nb_sizes, nr_of_cells))
-            for i in range(1,nb_sizes+1):
-                output["dust_enrich{:d}".format(i)]  = cells["dust_ratio_{:d}".format(i)]  
-
-            epsilon_tot = np.zeros(output["dust_enrich1"].shape)
-            for i in range(1,nb_sizes+1):
-                epsilon_tot+=output["dust_enrich{:d}".format(i)]
-            correction_factor = 1-epsilon_tot
-            output["gas_massdensity"] = mp*correction_factor*output["density"] # actual gas density 
         
-            for i in range(1,nb_sizes+1):
-                dustratios[i-1,:] = output["dust_enrich{:d}".format(i)]/correction_factor
+        #output["density"]  = cells["density"]
+
+        # if has_ratio:
+        #     dustratios = np.zeros((nb_sizes, nr_of_cells))
+        #     for i in range(1,nb_sizes+1):
+        #         output["dust_enrich{:d}".format(i)]  = cells["dust_ratio_{:d}".format(i)]  
+
+        #     epsilon_tot = np.zeros(output["dust_enrich1"].shape)
+        #     for i in range(1,nb_sizes+1):
+        #         epsilon_tot+=output["dust_enrich{:d}".format(i)]
+        #     correction_factor = 1-epsilon_tot
+        #     output["gas_massdensity"] = mp*correction_factor*output["density"] # actual gas density 
+        
+        #     for i in range(1,nb_sizes+1):
+        #         #dustratios[i-1,:] = output["dust_enrich{:d}".format(i)]/correction_factor
+        #         output["dust_ratio{:d}".format(i)] = output["dust_enrich{:d}".format(i)]/correction_factor
+
+        #---DENSITY SECTION:---
+        if has_ratio:
+            #IMPORTANT: Here, ramses dumps the total density = rho_g + rho_d in units of mu micron.(so density is not the actual gas density)
+            #for the dust, RAMSES provides dust enrichment (not dust-to-gas mass ratio). So we derive a corretion factor to obtain the dust mass ratios.
+
+            # shape: (cells, species)
+            dust_ratio = np.zeros((nr_of_cells, nb_sizes), dtype=np.float32)
+            dust_massdensity = np.zeros((nr_of_cells, nb_sizes), dtype=np.float32)
+
+            # RAMSES gives enrichment; convert to dust/gas
+            epsilon_tot = np.zeros(nr_of_cells, dtype=np.float32)
+
+            enrich = []
+
+            for i in range(1, nb_sizes + 1):
+                e = cells[f"dust_ratio_{i}"]
+                enrich.append(e)
+                epsilon_tot += e
+
+            correction_factor = 1.0 - epsilon_tot
+            output["gas_massdensity"] = mp * correction_factor * cells["density"]
+
+            for i, e in enumerate(enrich):
+                dust_ratio[:, i] = e / correction_factor
+
+
+            for i in range(1, nb_sizes + 1):
+                dust_massdensity[:, i] = dust_ratio[:, i]*output["gas_massdensity"]
+
+            output['dust_massdensities'] = dust_massdensity
+            output['dust_massdensity']  = np.sum(dust_massdensity, axis=1)
             
-            #useful because ramses dumps the total density = rho_g + rho_d in units of mu micron.(so density is not the gas density)
-            #for the dust, ramses actually provides dust enrichment (not dust-to-gas mass ratio)
+        if has_fluids:
+            print('yes has fluids, good')
+            fluid_density = np.zeros((nr_of_cells, nb_sizes), dtype=np.float32)
+
+            for i in range(1, nb_sizes + 1):
+                print(i)
+                fluid_density[:, i] = cells[f"dust_ratio_{i}"] * mp
+
+            output["dust_massdensities"] = fluid_density
+            output['dust_massdensity']  = np.sum(fluid_density, axis=1)
+            output["gas_massdensity"]  = cells["density"]*mp
+            
+
+        if not has_ratio and not has_fluids:
+            output["gas_massdensity"]  = cells["density"] * mp # in unit of RAMSES here
+            output['dust_massdensity'] = cells["density"] * mp * sim_param.dtogas
+        
  
-            #create new array for dust-to-gas mass ratio
-
-            # # correct dust to gas mass ratios
-            # for i in range(1,nb_sizes+1):
-            #     output[f'dust_enrich{(i + 1):d}'] = output["dust_enrich{:d}".format(i)]/correction_factor
-            
-        else:
-            output["gas_massdensity"]  = output["density"]*mp # in unit of RAMSES here
-            output['dust_massdensity'] = output['gas_massdensity'] * 1e-02
-            
-
         #---VELOCITY SECTION:---
         if has_velocity:
             output['velocity'] = cells['velocity'] * snap.info['unit_velocity'].express(C.m / C.s)
+
+        #---FLUID VELOCITY SECTION:---
+        if has_fluid_v:
+            output['fluid_v'] = cells['fluid_v']
 
         #---TEMPERATURE SECTION:---
         if has_temp:
@@ -192,26 +301,28 @@ class Convert:
             print("Min Max Mean T", output['Tgas'].min(), output['Tgas'].max(), output['Tgas'].mean())
             print("*************************************************")
 
-        # # correct dust to gas mass ratios
-        # for i in range(1,nb_sizes+1):
-        #     dustratios[i-1,:] = output["dustratio{:d}".format(i)]/correction_factor
 
-        # # case for a single dust-to-gas mass ratio:
-        # dustratio = np.sum(dustratios[:,:], axis=0)
+        # root = self.write_amr_to_zarr(output, 
+        #                          store_path = Path(radmc_dir) / f"output{ramses_num}_grid.zarr", 
+        #                          has_temp=has_temp, 
+        #                          has_velocity=has_velocity, 
+        #                          has_ratio=has_ratio,
+        #                          has_fluids=has_fluids,
+        #                          has_fluid_v=has_fluid_v)
 
-        # print("output['Tgas']: ", output['Tgas'].shape)
-        # print("output['Tdust']: ", output['Tdust'].shape)
-        # print("output['x']: ", output['x'].shape)
-        # print("output['y']: ", output['y'].shape)
-        # print("output['z']: ", output['z'].shape)
-        # print("output['dx']: ", output['dx'].shape)
-        # print("output['level']: ", output['level'].shape)
-        # print("output['density']: ", output['density'].shape)
-        # print("output['velocity']: ", output['velocity'].shape)
-        # print("output['dust_ratio']: ", output['dust_ratio'].shape)
 
-        z_dustratios = zarr.array(dustratios)
-        return z_dustratios # so it is stored in Grid, then used to write RT files.
+        #print("shape of output['Tgas']: ", output['Tgas'].shape)
+        print("shape of output['x']: ", output['x'].shape)
+        print("shape of output['gas_massdensity']: ", output['gas_massdensity'].shape)
+        print("shape of output['dust_massdensity']: ", output['dust_massdensity'].shape)
+        print("shape of output['dust_massdensities']: ", output['dust_massdensities'].shape)
+        print("shape of output['fluid_v']: ", output['fluid_v'].shape)
+        print("shape of output['velocity']: ", output['velocity'].shape)
+
+
+
+
+        return output['Tgas'] #!!root!! # will later be stored in the main Grid, then used to write RT files.
         
 
     def polaris_photon(self):
