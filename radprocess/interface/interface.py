@@ -112,6 +112,7 @@ def start_pipeline_display(ramses_dir, cfg, pipe):
         status_text += f"\n⚠ pymsesrc write failed: {e}"
 
     hydro_text = pipe.read_hydro_descriptor()
+    other_hydro_text = pipe.read_other_file_descriptor()
     sink_text = pipe.read_sink_info()
     pymses_dict = pipe.read_pymsesrc()
 
@@ -124,6 +125,13 @@ def start_pipeline_display(ramses_dir, cfg, pipe):
         <pre style="font-family: monospace; margin:0;">{hydro_text}</pre>
     </div>
     """
+
+    other_hydro_html = f"""
+    <div style="overflow:auto; max-height:400px; border:1px solid #888; border-radius:6px; padding:5px;">
+        <pre style="font-family: monospace; margin:0;">{other_hydro_text}</pre>
+    </div>
+    """
+
     sink_html = sink_text_to_table(sink_text)
     pymsesrc_html = f"""
     <div style="overflow:auto; max-height:400px; border:1px solid #888; border-radius:6px; padding:5px;">
@@ -131,7 +139,7 @@ def start_pipeline_display(ramses_dir, cfg, pipe):
     </div>
     """
 
-    return status_text, hydro_html, sink_html, pymsesrc_html, sink_rows, cfg, pipe
+    return status_text, hydro_html, other_hydro_html, sink_html, pymsesrc_html, sink_rows, cfg, pipe
 
 
 
@@ -144,6 +152,7 @@ def launch_interface():
     # 1. Define all components first
     status_box = gr.Textbox(...)
     hydro_html = gr.HTML(value="")
+    other_hydro_html = gr.HTML(value="")
     sink_html = gr.HTML(value="")
     pymsesrc_html = gr.HTML(value="")
 
@@ -262,6 +271,10 @@ def launch_interface():
                                 # --- hydro descriptor ---
                                 with gr.Tab("hydro_file_descriptor"):
                                     hydro_html = gr.HTML(value="", elem_id="hydro_display")
+
+                                # --- hydro descriptor ---
+                                with gr.Tab("other_file_descriptor"):
+                                    other_hydro_html = gr.HTML(value="", elem_id="other_hydro_display")
 
                                 # --- sink info ---
                                 with gr.Tab("sink info"):
@@ -597,10 +610,10 @@ def launch_interface():
 
 
         def on_read_ramses(ramses_dir, cfg, pipe):
-            status_text, hydro_html_val, sink_html_val, pymsesrc_html_val, sink_rows, cfg, pipe = start_pipeline_display(ramses_dir, cfg, pipe)
+            status_text, hydro_html_val, other_hydro_html_val, sink_html_val, pymsesrc_html_val, sink_rows, cfg, pipe = start_pipeline_display(ramses_dir, cfg, pipe)
             # Extract columns for dropdowns
             columns = list(sink_rows[0].keys()) if sink_rows else []
-            return status_text, hydro_html_val, sink_html_val, pymsesrc_html_val, sink_rows, columns, cfg, pipe
+            return status_text, hydro_html_val, other_hydro_html_val, sink_html_val, pymsesrc_html_val, sink_rows, columns, cfg, pipe
 
         # After all components are defined
         start_button.click(
@@ -609,6 +622,7 @@ def launch_interface():
             outputs=[
                 status_box,
                 hydro_html,
+                other_hydro_html,
                 sink_html,
                 pymsesrc_html,
                 sink_data_state,

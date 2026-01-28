@@ -1,4 +1,6 @@
+import glob
 import os
+import re
 #import json
 
 import numpy as np
@@ -64,6 +66,63 @@ def hydro_file_descriptor(path):
     nb_dust_ratios = sum("dust_ratio" in name for name in variables.values())
 
     return nvar, variables, nb_dust_ratios
+
+def other_file_descriptor(path):
+    """
+    Parse any RAMSES *_file_descriptor.txt except hydro_file_descriptor.txt.
+
+    Returns:
+        nvar (int)
+        variables (dict): {1-based_index: variable_name}
+        nb_fluids (int): inferred number of fluids
+    """
+
+    if not path.endswith("/"):
+        path += "/"
+
+    # Find any *_file_descriptor.txt except hydro
+    candidates = glob.glob(os.path.join(path, "*_file_descriptor.txt"))
+    candidates = [f for f in candidates if not f.endswith("hydro_file_descriptor.txt")]
+
+    if not candidates:
+        return None, None, 0
+
+    filename = candidates[0]  # assume only one
+    print(f"Found extra descriptor: {os.path.basename(filename)}")
+
+    variables = {}
+    nvar = 0
+    counter = 1  # we assign indices ourselves
+
+    try:
+        with open(filename, "r") as f:
+            for line in f:
+                line = line.strip()
+
+                # nvarflu or similar
+                if "=" in line and line.lower().startswith("nvar"):
+                    nvar = int(line.split("=")[1].strip())
+
+                elif line.startswith("variable"):
+                    # everything after colon is the name
+                    name = line.split(":", 1)[1].strip()
+
+                    variables[counter] = name
+                    counter += 1
+
+    except Exception as e:
+        raise RuntimeError(f"Error reading {filename}:\n{e}")
+
+    # -------------------------------------------------
+    # Infer number of fluids safely:
+    # count fluid_density_*
+    # -------------------------------------------------
+    density_vars = [v for v in variables.values() if v.startswith("fluid_density")]
+
+    nb_fluids = len(density_vars)
+
+    return nvar, variables, nb_fluids
+
 
 
 def sink_info(path):
