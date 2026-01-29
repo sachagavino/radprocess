@@ -20,56 +20,50 @@ class Pipeline:
 
     def get_enabled_amr_fields(self):
 
-        # --- Enforce dependencies ---
         if getattr(self.configparams.amrsource, "temp", False):
             if not getattr(self.configparams.amrsource, "p", False):
-                print("NOTE: 'temp' requires 'pressure' → enabling pressure automatically.")
+                print("NOTE: 'temp' requires 'pressure'")
                 self.configparams.amrsource.p = True
 
         enabled_vars = []
-        # Iterate through dataclass fields
-        for f in fields(self.configparams.amrsource):
-            field_name = f.name
-            enabled = getattr(self.configparams.amrsource, field_name)
+        dust_count = self.configparams.nb_dust
 
-            if not enabled:
+        for f in fields(self.configparams.amrsource):
+            if not getattr(self.configparams.amrsource, f.name):
                 continue
 
             meta = f.metadata or {}
-            ramses_name = meta.get("ramses_name", field_name)
+            ramses_name = meta.get("ramses_name", f.name)
             field_type = meta.get("type", "scalar")
 
-            # ---- SPECIAL CASE: dust_ratio ----
-            dust_count = self.configparams.nb_dust
-
+            # ---------- dust ----------
             if ramses_name == "dust_ratio":
-                # Expand into dust_ratio_1, dust_ratio_2, ..., dust_ratio_N
-                if dust_count > 0:
-                    for i in range(1, dust_count + 1):
-                        enabled_vars.append(f"{ramses_name}_{i}")
-                # If nb_dust == 0: skip silently
+                for i in range(1, dust_count + 1):
+                    enabled_vars.append(f"dust_ratio_{i}")
                 continue
 
+            # ---------- fluid density ----------
             if ramses_name == "fluid_density":
-                # Expand into fluid_density_1, fluid_density_2, ..., fluid_density_N
-                if dust_count > 0:
-                    for i in range(1, dust_count + 1):
-                        enabled_vars.append(f"{ramses_name}_{i}")
-                # If nb_dust == 0: skip silently
+                for i in range(1, dust_count + 1):
+                    enabled_vars.append(f"fluid_density_{i}")
                 continue
 
-            # # vector
-            # if field_type == "vector":
-            #     enabled_vars.extend([
-            #         f"{ramses_name}_x",
-            #         f"{ramses_name}_y",
-            #         f"{ramses_name}_z",
-            #     ])
-            # # scalar
-            # else:
+            # ---------- fluid velocity (vector) ----------
+            if ramses_name == "fluid_v":
+                for i in range(1, dust_count + 1):
+                    enabled_vars.append(f"fluid_v_{i}")
+                continue
+
+            # ---------- normal vector ----------
+            if field_type == "vector":
+                enabled_vars.append(ramses_name)
+                continue
+
+            # ---------- scalar ----------
             enabled_vars.append(ramses_name)
 
         return enabled_vars
+
 
     def read_hydro_descriptor(self):
         """

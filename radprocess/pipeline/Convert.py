@@ -136,8 +136,6 @@ class Convert:
 
         return root
 
-
-
     def ramses(self, ramses_dir, ramses_num, radmc_dir, source, sim_param, nb_sizes):
         importlib.reload(pymses) # Reload pymses to clear internal caches. Another problem with Pymses.
 
@@ -152,13 +150,21 @@ class Convert:
         fields = []
         i = 0
         #----------------------------------------------------
-        has_fluids = any("fluid_density" in s for s in source)
-        has_ratio = any("dust_ratio" in s for s in source)
-        has_velocity = any("velocity" in s for s in source)
-        has_fluid_v = any("fluid_v" in s for s in source)
-        has_bfield = any("B_" in s for s in source)
+        
+
+
+        #separate hydro vs. fluids
+        hydro_fields = [s for s in source if not s.startswith("fluid_")]
+        has_ratio    = any(s.startswith("dust_ratio") for s in source)
+        has_velocity = any(s.startswith("velocity") for s in source)
+        has_bfield   = any(s.startswith("B_") for s in source)
         has_pressure = any("pressure" in s for s in source)
-        has_temp = any("temperature" in s for s in source)
+        has_temp     = any("temperature" in s for s in source)
+
+
+        fluid_fields = [s for s in source if s.startswith("fluid_")]
+        has_fluids   = any(s.startswith("fluid_density") for s in source)
+        has_fluid_v  = any(s.startswith("fluid_v") for s in source)
 
         snap = pymses.RamsesOutput(ramses_dir, ramses_num)
 
@@ -180,7 +186,10 @@ class Convert:
         #     if f not in available_fields:
         #         raise RuntimeError(f"Requested field '{f}' not found in RAMSES data")
 
-        amr = snap.amr_source(source)
+        
+        ## HYDRO PART
+        #amr = snap.amr_source(source)
+        amr = snap.amr_source(hydro_fields)
         cell_source = CellsToPoints(amr)
         cell_source.ndim
         cells = cell_source.flatten()
@@ -196,6 +205,12 @@ class Convert:
         output["z"] = cells.points[:,2]*unit_l
         # level of each cell
         output["level"]=np.log2(unit_l/output["dx"])
+
+
+        ## FLUID PART
+        if fluid_fields:
+            fluid_amr = snap.amr_source(fluid_fields)
+            fluid_cells = CellsToPoints(fluid_amr).flatten()
 
         
         #output["density"]  = cells["density"]
@@ -238,10 +253,10 @@ class Convert:
             output["gas_massdensity"] = mp * correction_factor * cells["density"]
 
             for i, e in enumerate(enrich):
-                dust_ratio[:, i] = e / correction_factor
+                dust_ratio[:, i-1] = e / correction_factor
 
 
-            for i in range(1, nb_sizes + 1):
+            for i in range(0, nb_sizes):
                 dust_massdensity[:, i] = dust_ratio[:, i]*output["gas_massdensity"]
 
             output['dust_massdensities'] = dust_massdensity
@@ -251,9 +266,8 @@ class Convert:
             print('yes has fluids, good')
             fluid_density = np.zeros((nr_of_cells, nb_sizes), dtype=np.float32)
 
-            for i in range(1, nb_sizes + 1):
-                print(i)
-                fluid_density[:, i] = cells[f"dust_ratio_{i}"] * mp
+            for i in range(0, nb_sizes):
+                fluid_density[:, i] = fluid_cells[f"fluid_density_{i+1}"] * mp
 
             output["dust_massdensities"] = fluid_density
             output['dust_massdensity']  = np.sum(fluid_density, axis=1)
@@ -267,11 +281,13 @@ class Convert:
  
         #---VELOCITY SECTION:---
         if has_velocity:
-            output['velocity'] = cells['velocity'] * snap.info['unit_velocity'].express(C.m / C.s)
+            output["velocity"] = (
+                cells["velocity"] * snap.info["unit_velocity"].express(C.m / C.s)
+            )
 
-        #---FLUID VELOCITY SECTION:---
-        if has_fluid_v:
-            output['fluid_v'] = cells['fluid_v']
+        # #---FLUID VELOCITY SECTION:---
+        # if has_fluid_v:
+        #     output['fluid_v'] = fluid_cells['fluid_v']
 
         #---TEMPERATURE SECTION:---
         if has_temp:
@@ -302,13 +318,13 @@ class Convert:
             print("*************************************************")
 
 
-        # root = self.write_amr_to_zarr(output, 
-        #                          store_path = Path(radmc_dir) / f"output{ramses_num}_grid.zarr", 
-        #                          has_temp=has_temp, 
-        #                          has_velocity=has_velocity, 
-        #                          has_ratio=has_ratio,
-        #                          has_fluids=has_fluids,
-        #                          has_fluid_v=has_fluid_v)
+        root = self.write_amr_to_zarr(output, 
+                                 store_path = Path(radmc_dir) / f"output{ramses_num}_grid.zarr", 
+                                 has_temp=has_temp, 
+                                 has_velocity=has_velocity, 
+                                 has_ratio=has_ratio,
+                                 has_fluids=has_fluids,
+                                 has_fluid_v=has_fluid_v)
 
 
         #print("shape of output['Tgas']: ", output['Tgas'].shape)
@@ -316,13 +332,14 @@ class Convert:
         print("shape of output['gas_massdensity']: ", output['gas_massdensity'].shape)
         print("shape of output['dust_massdensity']: ", output['dust_massdensity'].shape)
         print("shape of output['dust_massdensities']: ", output['dust_massdensities'].shape)
-        print("shape of output['fluid_v']: ", output['fluid_v'].shape)
-        print("shape of output['velocity']: ", output['velocity'].shape)
+        #print("shape of output['fluid_v']: ", output['fluid_v'].shape)
+        #print("shape of output['velocity']: ", output['velocity'].shape)
+        #print(output['dust_massdensities'][0,0])
 
 
 
 
-        return output['Tgas'] #!!root!! # will later be stored in the main Grid, then used to write RT files.
+        return output['x'] #!!root!! # will later be stored in the main Grid, then used to write RT files.
         
 
     def polaris_photon(self):
