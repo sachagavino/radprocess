@@ -2,13 +2,15 @@ import os
 import json
 
 from dataclasses import fields
+from pathlib import Path
+
+import zarr
 
 from radprocess.pipeline.Grid import Grid
 from radprocess.pipeline.Convert import Convert
 from radprocess import radmc3d
 from radprocess import ramses
 from radprocess.utils.config import ConfigParams
-
 from radprocess.constants.constants import au2cm, M_sun, R_sun
 
 class Pipeline:
@@ -17,6 +19,18 @@ class Pipeline:
         self.convert = Convert() 
         self.grid = Grid()
         self.configparams = ConfigParams()
+
+    @property
+    def ramses_converted_dir(self):
+        return Path(self.configparams.pipoutput.main_output_dir) / "ramses"
+
+    @property
+    def radmc_outputs_dir(self):
+        return Path(self.configparams.pipoutput.main_output_dir) / "radmc3d"
+
+    @property
+    def polaris_outputs_dir(self):
+        return Path(self.configparams.pipoutput.main_output_dir) / "polaris"
 
     def get_enabled_amr_fields(self):
 
@@ -191,29 +205,63 @@ class Pipeline:
         # Write the file
         ramses.write.pymsesrc(ramses_dir)
     
-    def set_radmc3d_dir(self, path):
-        """
-        Ensure a RADMC-3D directory exists, store it in configparams,
-        and optionally read wavelength/dust files if present.
-        Returns a summary string for UI display.
-        """
-        # 1. Create directory if needed
-        if not os.path.isdir(path):
-            os.makedirs(path, exist_ok=True)
-            created = True
-        else:
-            created = False
+    # def set_radmc3d_dir(self, path):
+    #     """
+    #     Ensure a RADMC-3D directory exists, store it in configparams,
+    #     and optionally read wavelength/dust files if present.
+    #     Returns a summary string for UI display.
+    #     """
+    #     # 1. Create directory if needed
+    #     if not os.path.isdir(path):
+    #         os.makedirs(path, exist_ok=True)
+    #         created = True
+    #     else:
+    #         created = False
 
-        # 2. Store the directory in config
-        self.configparams.radoutput.radmc_output_dir = path
+    #     # 2. Store the directory in config
+    #     self.configparams.pipoutput.radmc_output_dir = path
 
-        messages = []
-        if created:
-            messages.append(f"Created RADMC-3D directory:\n  {self.configparams.radoutput.radmc_output_dir}")
-        else:
-            messages.append(f"Using existing RADMC-3D directory:\n  {self.configparams.radoutput.radmc_output_dir}")
+    #     messages = []
+    #     if created:
+    #         messages.append(f"Created RADMC-3D directory:\n  {self.configparams.pipoutput.radmc_output_dir}")
+    #     else:
+    #         messages.append(f"Using existing RADMC-3D directory:\n  {self.configparams.pipoutput.radmc_output_dir}")
     
-        return "\n".join(messages)
+    #     return "\n".join(messages)
+
+    def set_working_dir(self, workdir):
+        """
+        Set main pipeline output directory and create subfolders:
+          - ramses
+          - radmc3d
+          - polaris
+        """
+
+        base = Path(workdir).expanduser().resolve()
+
+        # Create main dir
+        base.mkdir(parents=True, exist_ok=True)
+
+        # Subdirectories
+        for sub in ["ramses", "radmc3d", "polaris"]:
+            (base / sub).mkdir(exist_ok=True)
+
+        # Store ONLY the main dir in config
+        self.configparams.pipoutput.main_output_dir = str(base)
+
+        # # Optionally expose derived paths (not stored permanently)
+        # self.ramses_outputs_dir = str(ramses_dir)
+        # self.radmc_outputs_dir = str(radmc_dir)
+        # self.polaris_outputs_dir = str(polaris_dir)
+
+        return (
+            f"✔ Working directory set to:\n{base}\n\n"
+            f"Created/verified:\n"
+            f" - {base / 'ramses'}\n"
+            f" - {base / 'radmc3d'}\n"
+            f" - {base / 'polaris'}"
+        )
+
 
         
     def thermal_radmc3d(self,
@@ -275,7 +323,10 @@ class Pipeline:
         the grid inside the amr_grid from Grid.
         """
         ramses_dir = self.configparams.ramsesoutput.ramses_output_dir
-        radmc_dir = self.configparams.radoutput.radmc_output_dir
+        #radmc_dir = self.configparams.pipoutput.radmc_output_dir
+        ramses_out = self.ramses_converted_dir
+        ramses_out.mkdir(parents=True, exist_ok=True)
+
         enabled_source = self.get_enabled_amr_fields()
         nb_sizes = self.configparams.nb_dust
         sim_param = self.configparams.sim
@@ -284,8 +335,112 @@ class Pipeline:
         folder = clean.rsplit("/", 1)[0] + "/"
         num = int(clean.rsplit("_", 1)[1])
 
-        amr_grid = self.convert.ramses(folder, num, radmc_dir, enabled_source, sim_param, nb_sizes)
-        #self.grid.add_amr_grid(amr_grid)
-        
+        amr_grid = self.convert.ramses(
+            folder,
+            num,
+            ramses_out,
+            enabled_source,
+            sim_param,
+            nb_sizes,
+        )
 
-        #ultimately, there will be only one function that convert ramses to radiative friendly format, then two function that takes the created grid to write radmc3d and polaris files.
+        self.grid.add_amr_grid(amr_grid)
+
+    def convert_to_radmc(self):
+        """
+        read RAMSES Zarr root, convert it into RADMC3D intputs.
+        args: 
+            - root (Zarr file)
+        outputs: 
+            - amr_grid.inp, 
+            - dust_density.inp, 
+            - stars.inp
+        """
+        ramses_dir = self.configparams.ramsesoutput.ramses_output_dir
+        radmc_dir = self.radmc_outputs_dir
+        ramses_out = self.ramses_converted_dir
+        root = None
+
+        clean = ramses_dir.strip().rstrip("/")   # remove whitespace + trailing slash
+        folder = clean.rsplit("/", 1)[0] + "/"
+        num = int(clean.rsplit("_", 1)[1])
+        
+        # -------------------------------------------------
+        # Resolve AMR Zarr root (priority: memory → disk)
+        # -------------------------------------------------
+
+    
+        # ---- 1) Check in-memory grid list first ----
+        if self.grid.amr_grid:
+
+            if len(self.grid.amr_grid) > 1:
+                print("Multiple AMR grids in memory — using the first one for now, will change in the future.")
+
+            root = self.grid.amr_grid[0]
+
+            try:
+                stored_num = int(root.attrs.get("ramses_output_num", -1))
+            except Exception:
+                stored_num = -1
+
+            if stored_num != num:
+                raise RuntimeError(
+                    f"In-memory AMR grid corresponds to RAMSES output {stored_num}, "
+                    f"but requested {num}. Please reload RAMSES and/or check consistency with RAMSES number simu."
+                )
+
+        # ---- 2) Otherwise look on disk ----
+        else:
+            ramses_dir = Path(self.ramses_converted_dir)
+
+            if not ramses_dir.exists():
+                raise FileNotFoundError(
+                    f"RAMSES converted directory does not exist:\n{ramses_dir}"
+                )
+
+            # Find matching Zarr folder
+            candidates = list(ramses_dir.glob(f"*{num}*.zarr"))
+
+            if not candidates:
+                raise FileNotFoundError(
+                    f"No Zarr AMR grid found for RAMSES output {num} in:\n{ramses_dir}"
+                )
+
+            if len(candidates) > 1:
+                raise RuntimeError(
+                    f"Multiple Zarr grids match output {num}:\n"
+                    + "\n".join(str(c) for c in candidates)
+                )
+
+            zarr_path = candidates[0]
+            root = zarr.open(zarr_path, mode="r")
+
+            # Sanity check attribute
+            try:
+                stored_num = int(root.attrs.get("ramses_output_num", -1))
+            except Exception:
+                stored_num = -1
+
+            if stored_num != num:
+                raise RuntimeError(
+                    f"Zarr grid {zarr_path.name} claims RAMSES output {stored_num}, "
+                    f"but requested {num}."
+                )
+
+            # Cache into Grid for later reuse
+            self.grid.add_amr_grid(root)
+
+        # root is now guaranteed valid
+
+        radmc_grid = self.convert.to_radmc(root)
+        self.grid.add_radmc_grid(radmc_grid)
+
+
+        # nb_sizes = self.configparams.nb_dust
+        # sim_param = self.configparams.sim
+
+        # clean = ramses_dir.strip().rstrip("/")   # remove whitespace + trailing slash
+        # folder = clean.rsplit("/", 1)[0] + "/"
+        # num = int(clean.rsplit("_", 1)[1])
+
+

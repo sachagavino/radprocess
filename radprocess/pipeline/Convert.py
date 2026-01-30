@@ -26,10 +26,14 @@ from radprocess.constants.constants import Ggram, kbol, pc, amu
 
 
 class Convert:
+    def __init__(self):
+        self.l_cm = None
+        self.unit_l = None
 
-    def write_amr_to_zarr(self, 
+    def write_amr_to_zarr(self,
                           output, 
                           store_path="amr_grid.zarr", 
+                          ramses_num=None,
                           has_temp=False, 
                           has_velocity=False, 
                           has_ratio=False,
@@ -41,17 +45,18 @@ class Convert:
         """
 
         root = zarr.open(store_path, mode="w")
+        compressor = Blosc(cname="zstd", clevel=3, shuffle=Blosc.BITSHUFFLE)
 
         N = output["x"].shape[0]
 
-        # Scalars
+        # --Scalars--
         if has_temp:
             scalar_fields = [
-                "Tgas", "Tdust", "x", "y", "z", "dx", "level", "density"
+                "Tgas", "Tdust", "x", "y", "z", "dx", "level", "gas_massdensity"
             ]
         else:
             scalar_fields = [
-                "x", "y", "z", "dx", "level", "density"
+                "x", "y", "z", "dx", "level", "gas_massdensity"
             ]        
 
         for name in scalar_fields:
@@ -62,7 +67,7 @@ class Convert:
                 dtype=arr.dtype,
                 data=arr,
                 chunks=(100_000,),
-                compressor=Blosc(cname="zstd", clevel=3, shuffle=Blosc.BITSHUFFLE),
+                compressor=compressor,
             )
 
             # root.create_dataset(
@@ -72,8 +77,24 @@ class Convert:
             #     compressor=Blosc(cname="zstd", clevel=3),
             # )
 
+        # --Dust_massdensity-- (even though it is scalar we define a specific chunk because of possible multi-fluid model)
+        arr = output["dust_massdensity"]
 
-        # Velocity field
+        if arr.ndim == 1:
+            chunks = (50_000,)
+        else:
+            chunks = (50_000, arr.shape[1])
+
+        root.create_dataset(
+            "dust_massdensity",
+            shape=arr.shape,
+            dtype=arr.dtype,
+            data=arr,
+            chunks=chunks,
+            compressor=compressor,
+        )
+
+        # --Velocity field--
         if has_velocity:
             arr = output["velocity"]
             root.create_dataset(
@@ -82,24 +103,33 @@ class Convert:
                 dtype=arr.dtype,
                 data=arr,
                 chunks=(50_000, 3),
-                compressor=Blosc(cname="zstd", clevel=3, shuffle=Blosc.BITSHUFFLE),
+                compressor=compressor,
             )
 
-
-        # Fluid velocity field
+        # --Fluid velocity field--
         if has_fluid_v:
             arr = output["fluid_v"]
             root.create_dataset(
-                "velocity",
+                "fluid_velocity",
                 shape=arr.shape,
                 dtype=arr.dtype,
                 data=arr,
                 chunks=(50_000, 3),
-                compressor=Blosc(cname="zstd", clevel=3, shuffle=Blosc.BITSHUFFLE),
+                compressor=compressor,
             )
 
+        if has_fluids:
+            print('add here the grain sizes, and if exist, the dust number densities')
 
-        # Dust ratios
+            # root.create_dataset(
+            #     "dust_ratio",
+            #     data=output["dust_ratio"],
+            #     chunks=(50_000, output["dust_ratio"].shape[1]),
+            #     compressor=Blosc(cname="zstd", clevel=3),
+            # )
+
+
+        # --Dust ratios--
         if has_ratio:
             arr = output["dust_ratio"]
 
@@ -109,34 +139,26 @@ class Convert:
                 dtype=arr.dtype,
                 data=arr,
                 chunks=(50_000, arr.shape[1]),
-                compressor=Blosc(cname="zstd", clevel=3, shuffle=Blosc.BITSHUFFLE),
+                compressor=compressor,
             )
 
-        # Fluid density
-        if has_fluids:
-            arr = output["fluid_density"]
+        #root.attrs["n_cells"] = N
 
-            root.create_dataset(
-                "fluid_density",
-                shape=arr.shape,
-                dtype=arr.dtype,
-                data=arr,
-                chunks=(50_000, arr.shape[1]),
-                compressor=Blosc(cname="zstd", clevel=3, shuffle=Blosc.BITSHUFFLE),
-            )
+        root.attrs.update({
+            "schema_version": int(1),
+            "nb_cells": int(N),
+            "l_cm": float(self.l_cm),
+            "l_m": float(self.unit_l),
+        })
 
-            # root.create_dataset(
-            #     "dust_ratio",
-            #     data=output["dust_ratio"],
-            #     chunks=(50_000, output["dust_ratio"].shape[1]),
-            #     compressor=Blosc(cname="zstd", clevel=3),
-            # )
-
-        root.attrs["n_cells"] = N
+        if ramses_num is not None:
+            root.attrs["ramses_output_num"] = int(ramses_num)
 
         return root
 
-    def ramses(self, ramses_dir, ramses_num, radmc_dir, source, sim_param, nb_sizes):
+
+
+    def ramses(self, ramses_dir, ramses_num, ramses_out, source, sim_param, nb_sizes):
         importlib.reload(pymses) # Reload pymses to clear internal caches. Another problem with Pymses.
 
         print(f"\n=== New RAMSES Conversion ===")
@@ -194,17 +216,17 @@ class Convert:
         cell_source.ndim
         cells = cell_source.flatten()
         output = {} #OR = list size of amr + 4 for dx x y z level
-        unit_l = snap.info["unit_length"].express(C.m) # Cell lengths 
+        self.unit_l = snap.info["unit_length"].express(C.m) # Cell lengths 
+        self.l_cm = snap.info["unit_length"].express(C.cm) # Cell lengths 
         # max. number of cells
-        output["dx"] = cells.get_sizes()*unit_l
-        
+        output["dx"] = cells.get_sizes()*self.unit_l
         nr_of_cells = len(output["dx"])
         # Original cell positions (from 0 to 1) converted into uint length)
-        output["x"] = cells.points[:,0]*unit_l
-        output["y"] = cells.points[:,1]*unit_l
-        output["z"] = cells.points[:,2]*unit_l
+        output["x"] = cells.points[:,0]*self.unit_l
+        output["y"] = cells.points[:,1]*self.unit_l
+        output["z"] = cells.points[:,2]*self.unit_l
         # level of each cell
-        output["level"]=np.log2(unit_l/output["dx"])
+        output["level"]=np.log2(self.unit_l/output["dx"])
 
 
         ## FLUID PART
@@ -213,7 +235,7 @@ class Convert:
             fluid_cells = CellsToPoints(fluid_amr).flatten()
 
         
-        #output["density"]  = cells["density"]
+        #
 
         # if has_ratio:
         #     dustratios = np.zeros((nb_sizes, nr_of_cells))
@@ -231,6 +253,9 @@ class Convert:
         #         output["dust_ratio{:d}".format(i)] = output["dust_enrich{:d}".format(i)]/correction_factor
 
         #---DENSITY SECTION:---
+        #output["density"] = cells["density"]
+
+
         if has_ratio:
             #IMPORTANT: Here, ramses dumps the total density = rho_g + rho_d in units of mu micron.(so density is not the actual gas density)
             #for the dust, RAMSES provides dust enrichment (not dust-to-gas mass ratio). So we derive a corretion factor to obtain the dust mass ratios.
@@ -263,7 +288,6 @@ class Convert:
             output['dust_massdensity']  = np.sum(dust_massdensity, axis=1)
             
         if has_fluids:
-            print('yes has fluids, good')
             fluid_density = np.zeros((nr_of_cells, nb_sizes), dtype=np.float32)
 
             for i in range(0, nb_sizes):
@@ -319,7 +343,8 @@ class Convert:
 
 
         root = self.write_amr_to_zarr(output, 
-                                 store_path = Path(radmc_dir) / f"output{ramses_num}_grid.zarr", 
+                                 store_path = ramses_out / f"output{ramses_num}_grid.zarr", 
+                                 ramses_num=ramses_num, 
                                  has_temp=has_temp, 
                                  has_velocity=has_velocity, 
                                  has_ratio=has_ratio,
@@ -327,28 +352,51 @@ class Convert:
                                  has_fluid_v=has_fluid_v)
 
 
-        #print("shape of output['Tgas']: ", output['Tgas'].shape)
-        print("shape of output['x']: ", output['x'].shape)
-        print("shape of output['gas_massdensity']: ", output['gas_massdensity'].shape)
-        print("shape of output['dust_massdensity']: ", output['dust_massdensity'].shape)
-        print("shape of output['dust_massdensities']: ", output['dust_massdensities'].shape)
-        #print("shape of output['fluid_v']: ", output['fluid_v'].shape)
-        #print("shape of output['velocity']: ", output['velocity'].shape)
-        #print(output['dust_massdensities'][0,0])
+        # print("shape of output['Tgas']: ", output['Tgas'].shape)
+        # print("shape of output['x']: ", output['x'].shape)
+        # print("shape of output['gas_massdensity']: ", output['gas_massdensity'].shape)
+        # print("shape of output['dust_massdensity']: ", output['dust_massdensity'].shape)
+        # print("shape of output['dust_massdensities']: ", output['dust_massdensities'].shape)
+        # print("shape of output['fluid_v']: ", output['fluid_v'].shape)
+        # print("shape of output['velocity']: ", output['velocity'].shape)
+        # print(output['dust_massdensities'][0,0])
 
 
 
 
-        return output['x'] #!!root!! # will later be stored in the main Grid, then used to write RT files.
+        return root # will later be stored in the main Grid, then used to write RT files.
         
+
+    def to_radmc(self, root):
+
+        l_m = root.attrs.get("l_m")
+        nb_cells = root.attrs.get("nb_cells")
+        level = root["level"]
+
+        x_min = -0.5*l_m
+        y_min = -0.5*l_m
+        z_min = -0.5*l_m
+
+        max_level = max(level)
+        min_level = min(level)
+
+        print("\n")
+        print("Octree parameter:")
+        print("    Level        (min,max)  : ", int(min_level),",", int(max_level))
+        print("    Nr. of cells (data, max): ", nb_cells,",", 8**max_level)
+        print("    Length       (min,max)  : ", l_m/(2**max_level),",", l_m, "\n")
+
+        # Initialize the octree
+        tree = OcTree.OcTree(x_min, y_min, z_min, l_m)
+
+
+    def to_polaris(self):
+        self.rat3 = 1
+
 
     def polaris_photon(self):
         self.rat1 = 1
 
-    def toramdc(self):
-        self.rat2 = 1
 
-    def topolaris(self):
-        self.rat3 = 1
 
     
