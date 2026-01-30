@@ -3,6 +3,8 @@ import time
 import sys
 import io
 from dataclasses import fields
+import threading
+import time
 
 import base64
 import gradio as gr
@@ -142,9 +144,6 @@ def start_pipeline_display(ramses_dir, cfg, pipe):
     return status_text, hydro_html, other_hydro_html, sink_html, pymsesrc_html, sink_rows, cfg, pipe
 
 
-
-
-
 # -----------------------------
 # Gradio Layout
 # -----------------------------
@@ -203,6 +202,8 @@ def launch_interface():
             except Exception as e:
                 return f"❌ Conversion failed: {e}"
 
+
+        ##-- STREAM LOADING RAMSES --
         def on_convert_stream(cfg, pipe):
             buffer = io.StringIO()
             old_stdout = sys.stdout
@@ -226,6 +227,32 @@ def launch_interface():
 
             finally:
                 sys.stdout = old_stdout
+
+        ##-- STREAM CONVERTINT RAMSES TO RADMC3D --
+        def on_convert_radmc_stream(cfg, pipe):
+            buffer = io.StringIO()
+            old_stdout = sys.stdout
+            sys.stdout = buffer
+
+            yield "Starting AMR → RADMC3D conversion...\n"
+
+            try:
+                pipe.configparams = cfg
+
+                print("Initializing RADMC3D conversion...")
+                yield buffer.getvalue(); buffer.truncate(0); buffer.seek(0)
+
+                pipe.convert_to_radmc()
+
+                yield buffer.getvalue(); buffer.truncate(0); buffer.seek(0)
+
+            except Exception as e:
+                yield buffer.getvalue()
+                yield f"❌ RADMC3D conversion failed: {e}\n"
+
+            finally:
+                sys.stdout = old_stdout
+
 
 
         # ---------- Main Row ----------
@@ -276,13 +303,14 @@ def launch_interface():
                                 with gr.Tab("other_file_descriptor"):
                                     other_hydro_html = gr.HTML(value="", elem_id="other_hydro_display")
 
-                                # --- sink info ---
-                                with gr.Tab("sink info"):
-                                    sink_html = gr.HTML(value="", elem_id="sink_display")
 
                                 # --- pymsesrc ---
                                 with gr.Tab("pymsesrc"):
                                     pymsesrc_html = gr.HTML(value="", elem_id="pymsesrc_display")
+
+                                # --- sink info ---
+                                with gr.Tab("sink info"):
+                                    sink_html = gr.HTML(value="", elem_id="sink_display")
 
                                 # --- NEW: Plot sinks ---
                                 with gr.Tab("Plot sinks"):
@@ -447,25 +475,14 @@ def launch_interface():
 
                 # --------- RADMC3D Tab (empty) ---------
                 with gr.Tab("RADMC3D Section"):
-                    # ---------- Inner Row for RADMC3D content ----------
-                    with gr.Row():
-                        # Left column: input + button + status
-                        with gr.Column(scale=1):
-                            radmc3d_dir_input = gr.Textbox(
-                                label="Enter the RADMC3D output directory (absolute path recommended):",
-                                value="radmc3d_outputs/",
-                                lines=1,
-                                placeholder="enter path to RADMC3D output here/"
-                            )
-
-                            set_radmc3d_button = gr.Button("Set RADMC3D directory", variant="primary")
-
-
-                            radmc_status_box = gr.Textbox(
-                                label="Status",
-                                value="Awaiting input...",
-                                lines=4
-                            )
+                    with gr.Tabs() as radmc_tabs_row:
+                        # --------- Working directory Tab ---------
+                        with gr.Tab("radmc3d.inp"):
+                            print('nothing')
+                        with gr.Tab("wavelength_microns.inp"):
+                            print('nothing')
+                        with gr.Tab("stars.inp"):
+                            print('nothing')
 
                 # --------- POLARIS Tab (empty) ---------
                 with gr.Tab("POLARIS Section"):
@@ -480,132 +497,249 @@ def launch_interface():
                                 placeholder="enter path to POLARIS output here/"
                             )
 
-                            set_polaris_button = gr.Button("Set POLARIS directory", variant="primary")
+                            # set_polaris_button = gr.Button("Set POLARIS directory", variant="primary")
 
 
-                            polaris_status_box = gr.Textbox(
-                                label="Status",
-                                value="Awaiting input...",
-                                lines=4
-                            )
+                            # polaris_status_box = gr.Textbox(
+                            #     label="Status",
+                            #     value="Awaiting input...",
+                            #     lines=4
+                            # )
 
                 # --------- PIPELINE Tab ---------
-                with gr.Tab("PIPELINE"):
+                with gr.Tab("PIPELINE Section"):
+                    with gr.Tabs() as pipeline_tabs_row:
+                        # --------- Working directory Tab ---------
+                        with gr.Tab("Working directory"):
 
-                    BUTTON_VISIBILITY = {
-                        "Create RAMSES grid": True,
-                        "Convert to RADMC3D": False,
-                        "Convert to POLARIS": False,
-                        "Run one photon (POLARIS)": False,
-                        "Run MCTHERM (RADMC3D)": False,
-                        "Merge temperatures": False,
-                        "Make image": False,
-                    }
+                            # --------- Working directory (top of PIPELINE tab) ---------
+                            with gr.Row():
+                                with gr.Column(scale=1):
 
-                    pipeline_actions = list(BUTTON_VISIBILITY.keys())
-                    MAX_STEPS = 10
-
-                    step_count = gr.State(0)
-
-
-                    with gr.Row():
-
-                        # ===== LEFT COLUMN =====
-                        with gr.Column(scale=1.5):
-
-                            gr.Markdown("### Build pipeline. Select actions.")
-
-                            rows = []
-                            dropdowns = []
-                            buttons = []
-
-                            for i in range(MAX_STEPS):
-
-                                # 🔹 Group keeps dropdown & button together
-                                with gr.Group(visible=False) as row:
-
-                                    # --- OPEN BOX ---
-                                    gr.HTML(
-                                        "<div style='border:1px solid #555;"
-                                        "padding:10px;"
-                                        "border-radius:8px;"
-                                        "margin-bottom:8px;'>"
+                                    workdir_input = gr.Textbox(
+                                        label="Enter the working directory (absolute path recommanded):",
+                                        value=None,
+                                        lines=1,
+                                        placeholder="e.g. model_output/"
                                     )
 
-                                    with gr.Row():
+                                    set_workdir_button = gr.Button("Set working directory", variant="primary")
 
-                                        dd = gr.Dropdown(
-                                            choices=pipeline_actions,
-                                            label=f"Action {i+1}",
-                                            value=None,
-                                            interactive=True
+                                    workdir_status_box = gr.Textbox(
+                                        label="Working directory status",
+                                        value="Awaiting input...",
+                                        lines=3
+                                    )
+
+
+
+
+                        # --------- MAIN Pipeline Tab ---------
+                        with gr.Tab("PIPELINE"): 
+                            with gr.Tab("Interactive"):  
+                                #DEFINE THE ACTIONS HERE.
+                                BUTTON_VISIBILITY = {
+                                    "Create RAMSES grid": True,
+                                    "Convert to RADMC3D": False,
+                                    "Convert to POLARIS": False,
+                                    "merge opacities (POLARIS to RADMC3D)": False,
+                                    "Run MCTHERM (RADMC3D)": False,
+                                    "Merge temperatures": False,
+                                    "Make image": False,
+                                }
+
+                                pipeline_actions = list(BUTTON_VISIBILITY.keys())
+                                MAX_STEPS = 10
+
+                                step_count = gr.State(0)                           
+
+                                with gr.Row():
+
+                                    # ===== LEFT COLUMN =====
+                                    with gr.Column(scale=1.5):
+
+                                        gr.Markdown("### Build the pipeline by selecting actions below.")
+
+                                        rows = []
+                                        dropdowns = []
+                                        buttons = []
+
+                                        for i in range(MAX_STEPS):
+
+                                            # 🔹 Group keeps dropdown & button together
+                                            with gr.Group(visible=False) as row:
+
+                                                # --- OPEN BOX ---
+                                                gr.HTML(
+                                                    "<div style='border:1px solid #555;"
+                                                    "padding:10px;"
+                                                    "border-radius:8px;"
+                                                    "margin-bottom:8px;'>"
+                                                )
+
+                                                with gr.Row():
+
+                                                    dd = gr.Dropdown(
+                                                        choices=pipeline_actions,
+                                                        label=f"Action {i+1}",
+                                                        value=None,
+                                                        interactive=True
+                                                    )
+
+                                                    btn = gr.Button(
+                                                        "Create RAMSES grid",
+                                                        visible=False
+                                                    )
+
+                                                # --- CLOSE BOX ---
+                                                gr.HTML("</div>")
+
+                                            rows.append(row)
+                                            dropdowns.append(dd)
+                                            buttons.append(btn)
+
+                                        add_step_button = gr.Button("➕ Add action", variant="huggingface")
+
+                                    # ===== RIGHT COLUMN =====
+                                    with gr.Column(scale=1.5):
+                                        convert_log = gr.Textbox(
+                                            label="Live Conversion Log",
+                                            value="Logs will appear here...",
+                                            lines=20,
+                                            interactive=False
                                         )
 
-                                        btn = gr.Button(
-                                            "Create RAMSES grid",
-                                            visible=False
-                                        )
 
-                                    # --- CLOSE BOX ---
-                                    gr.HTML("</div>")
+                                # === increment step count ===
+                                def add_step(n):
+                                    if n < MAX_STEPS:
+                                        n += 1
+                                    return n
 
-                                rows.append(row)
-                                dropdowns.append(dd)
-                                buttons.append(btn)
-
-                            add_step_button = gr.Button("➕ Add action", variant="huggingface")
-
-                        # ===== RIGHT COLUMN =====
-                        with gr.Column(scale=1.5):
-                            convert_log = gr.Textbox(
-                                label="Live Conversion Log",
-                                value="Logs will appear here...",
-                                lines=20,
-                                interactive=False
-                            )
+                                add_step_button.click(
+                                    fn=add_step,
+                                    inputs=[step_count],
+                                    outputs=[step_count]
+                                )
 
 
-                    # === increment step count ===
-                    def add_step(n):
-                        if n < MAX_STEPS:
-                            n += 1
-                        return n
+                                # === show rows up to step_count ===
+                                def update_visibility(n):
+                                    return [gr.update(visible=(i < n)) for i in range(MAX_STEPS)]
 
-                    add_step_button.click(
-                        fn=add_step,
-                        inputs=[step_count],
-                        outputs=[step_count]
-                    )
+                                step_count.change(
+                                    fn=update_visibility,
+                                    inputs=[step_count],
+                                    outputs=rows
+                                )
 
 
-                    # === show rows up to step_count ===
-                    def update_visibility(n):
-                        return [gr.update(visible=(i < n)) for i in range(MAX_STEPS)]
+                                # === toggle button per dropdown (lambda binding FIXED) ===
+                                def update_action_button(action):
+                                    if action == "Create RAMSES grid":
+                                        return gr.update(visible=True, value="Create RAMSES grid")
+                                    elif action == "Convert to RADMC3D":
+                                        return gr.update(visible=True, value="Convert to RADMC3D")
+                                    else:
+                                        return gr.update(visible=False)
 
-                    step_count.change(
-                        fn=update_visibility,
-                        inputs=[step_count],
-                        outputs=rows
-                    )
+                            for dd, btn in zip(dropdowns, buttons):
+
+                                dd.change(
+                                    fn=update_action_button,
+                                    inputs=[dd],
+                                    outputs=[btn],
+                                )
+
+                                def make_dispatch():
+
+                                    def dispatch(action, cfg, pipe):
+                                        buffer = io.StringIO()
+                                        old_stdout = sys.stdout
+                                        sys.stdout = buffer
+
+                                        done = False
+                                        error = None
+
+                                        full_log = ""
+
+                                        def run_job():
+                                            nonlocal done, error
+                                            try:
+                                                pipe.configparams = cfg
+
+                                                if action == "Create RAMSES grid":
+                                                    pipe.load_ramses()
+
+                                                elif action == "Convert to RADMC3D":
+                                                    pipe.convert_to_radmc()
+
+                                                else:
+                                                    raise RuntimeError("Unknown action.")
+
+                                            except Exception as e:
+                                                error = e
+                                            finally:
+                                                done = True
+
+                                        try:
+                                            if action == "Create RAMSES grid":
+                                                full_log += "Starting RAMSES → AMR grid conversion...\n"
+                                                yield full_log
+                                            elif action == "Convert to RADMC3D":
+                                                full_log += "Starting AMR → RADMC3D conversion...\n"
+                                                yield full_log
+
+                                            t = threading.Thread(target=run_job)
+                                            t.start()
+
+                                            while not done:
+                                                time.sleep(0.2)
+                                                txt = buffer.getvalue()
+                                                if txt:
+                                                    full_log += txt
+                                                    yield full_log
+                                                    buffer.truncate(0)
+                                                    buffer.seek(0)
+
+                                            txt = buffer.getvalue()
+                                            if txt:
+                                                full_log += txt
+                                                yield full_log
+
+                                            if error is not None:
+                                                full_log += f"❌ Failed: {error}\n"
+                                                yield full_log
+                                            else:
+                                                if action == "Create RAMSES grid":
+                                                    full_log += "✔ RAMSES grid created successfully.\n"
+                                                    yield full_log
+                                                elif action == "Convert to RADMC3D":
+                                                    full_log += "✔ RADMC3D conversion finished.\n"
+                                                    yield full_log
+
+                                        finally:
+                                            sys.stdout = old_stdout
+
+                                    return dispatch
+
+                                # THIS is an important part
+                                btn.click(
+                                    fn=make_dispatch(),
+                                    inputs=[dd, cfg_state, pipe_state],
+                                    outputs=convert_log,
+                                )
 
 
-                    # === toggle button per dropdown (lambda binding FIXED) ===
-                    for dd, btn in zip(dropdowns, buttons):
 
-                        dd.change(
-                            fn=lambda a, b=btn: gr.update(
-                                visible=(a == "Create RAMSES grid")
-                            ),
-                            inputs=[dd],
-                            outputs=[btn]
-                        )
 
-                        btn.click(
-                            fn=on_convert_stream,
-                            inputs=[cfg_state, pipe_state],
-                            outputs=convert_log
-                        )
 
+                            with gr.Tab("Jobs"):
+                                print('empty:')
+
+                        # --------- MAIN Results Tab ---------
+                        with gr.Tab("Pipeline Results"):
+                            print('nothing here') 
 
 
 
@@ -636,38 +770,55 @@ def launch_interface():
 
 
 
-        # ---------- Callback for Read RADMC3D button ----------
-        def on_set_radmc3d(radmc_dir, cfg, pipe):
+        # # ---------- Callback for Read RADMC3D button ----------
+        # def on_set_radmc3d(radmc_dir, cfg, pipe):
+        #     try:
+        #         # ensure pipeline uses the provided cfg
+        #         pipe.configparams = cfg
+        #         info = pipe.set_radmc3d_dir(radmc_dir)
+        #         return info, cfg, pipe
+        #     except Exception as e:
+        #         return f"Error: {e}", cfg, pipe
+
+        # set_radmc3d_button.click(
+        #     fn=on_set_radmc3d,
+        #     inputs=[radmc3d_dir_input, cfg_state, pipe_state],
+        #     outputs=[radmc_status_box, cfg_state, pipe_state]
+        # )
+
+        # ---------- Callback for Pipeline output ----------
+        def on_set_workdir(workdir, cfg, pipe):
             try:
-                # ensure pipeline uses the provided cfg
                 pipe.configparams = cfg
-                info = pipe.set_radmc3d_dir(radmc_dir)
-                return info, cfg, pipe
+                msg = pipe.set_working_dir(workdir)
+                return msg, cfg, pipe
             except Exception as e:
                 return f"Error: {e}", cfg, pipe
 
-        set_radmc3d_button.click(
-            fn=on_set_radmc3d,
-            inputs=[radmc3d_dir_input, cfg_state, pipe_state],
-            outputs=[radmc_status_box, cfg_state, pipe_state]
+        set_workdir_button.click(
+            fn=on_set_workdir,
+            inputs=[workdir_input, cfg_state, pipe_state],
+            outputs=[workdir_status_box, cfg_state, pipe_state]
         )
 
 
-        # ---------- Callback for Read POLARIS button ----------
-        def on_set_polaris(polaris_dir, cfg, pipe):
-            try:
-                # ensure pipeline uses the provided cfg
-                pipe.configparams = cfg
-                info = pipe.set_polaris_dir(polaris_dir)
-                return info, cfg, pipe
-            except Exception as e:
-                return f"Error: {e}", cfg, pipe
 
-        set_polaris_button.click(
-            fn=on_set_polaris,
-            inputs=[polaris_dir_input, cfg_state, pipe_state],
-            outputs=[polaris_status_box, cfg_state, pipe_state]
-        )
+
+        # # ---------- Callback for Read POLARIS button ----------
+        # def on_set_polaris(polaris_dir, cfg, pipe):
+        #     try:
+        #         # ensure pipeline uses the provided cfg
+        #         pipe.configparams = cfg
+        #         info = pipe.set_polaris_dir(polaris_dir)
+        #         return info, cfg, pipe
+        #     except Exception as e:
+        #         return f"Error: {e}", cfg, pipe
+
+        # set_polaris_button.click(
+        #     fn=on_set_polaris,
+        #     inputs=[polaris_dir_input, cfg_state, pipe_state],
+        #     outputs=[polaris_status_box, cfg_state, pipe_state]
+        # )
 
 
 

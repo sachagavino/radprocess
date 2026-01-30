@@ -216,11 +216,13 @@ class RamsesOutput(StrictDataclass):
 
 
 @dataclass
-class RadiativeOutput(StrictDataclass):
-    polaris_output_dir: str = field(default='polaris_outputs/', 
-        metadata={'desc': r'The POLARIS output directory path.'})
-    radmc_output_dir: str = field(default='radmc3d_outputs/', 
-        metadata={'desc': r'The RADMC3D output directory path.'})
+class PipelineOutput(StrictDataclass):
+    main_output_dir: str = field(default='pipeline_outputs/', 
+        metadata={'desc': r'The main pipeline output directory path.'})
+    # polaris_output_dir: str = field(default='polaris_outputs/', 
+    #     metadata={'desc': r'The POLARIS output directory path.'})
+    # radmc_output_dir: str = field(default='radmc3d_outputs/', 
+    #     metadata={'desc': r'The RADMC3D output directory path.'})
     
     def __repr__(self):  # terminal
         return fancy_repr(self)
@@ -291,7 +293,7 @@ class Sim(StrictDataclass):
 @dataclass
 class ConfigParams(StrictDataclass):
     ramsesoutput: RamsesOutput= field(default_factory=RamsesOutput)
-    radoutput: RadiativeOutput= field(default_factory=RadiativeOutput)
+    pipoutput: PipelineOutput= field(default_factory=PipelineOutput)
     amrsource: AmrSource = field(default_factory=AmrSource)
     sim: Sim = field(default_factory=Sim)
     nb_dust: int = 0
