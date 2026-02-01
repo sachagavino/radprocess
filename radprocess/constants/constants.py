@@ -15,7 +15,6 @@ L_sun       = 3.8525e33            # erg s^-1
 R_sun       = 6.96e10           # cm
 T_sun       = 5.78e3            # K
 M_earth     = 5.9722e27         #g
-au          = 1.49598e13        # Astronomical Unit         [cm]
 pc          = 3.08572e18        # Parsec                    [cm]
 dust_to_gas = 0.01
 au2cm       = 1.495978707e13    # convert au to cm

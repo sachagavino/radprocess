@@ -7,6 +7,8 @@ short description: convert from ramses to radmc3d and polaris.
 _____________________________________________________________________________________________________________
 """
 import os
+import re
+from collections import defaultdict
 import importlib
 from pathlib import Path
 
@@ -22,7 +24,7 @@ from radprocess import radmc3d
 from radprocess import ramses
 
 from radprocess.pipeline.OcTree import OcTree
-from radprocess.constants.constants import Ggram, kbol, pc, amu
+from radprocess.constants.constants import Ggram, kbol, pc, amu, au2m
 
 
 class Convert:
@@ -106,6 +108,19 @@ class Convert:
                 compressor=compressor,
             )
 
+
+        if has_fluids:
+            print('add here the grain sizes and dust number densities')
+            arr = output["dust_massdensities"]
+            root.create_dataset(
+                "dust_massdensities",
+                shape=arr.shape,
+                dtype=arr.dtype,
+                data=arr,
+                chunks=(50_000, arr.shape[1]),
+                compressor=compressor,
+            )
+
         # --Fluid velocity field--
         if has_fluid_v:
             arr = output["fluid_v"]
@@ -118,21 +133,10 @@ class Convert:
                 compressor=compressor,
             )
 
-        if has_fluids:
-            print('add here the grain sizes, and if exist, the dust number densities')
-
-            # root.create_dataset(
-            #     "dust_ratio",
-            #     data=output["dust_ratio"],
-            #     chunks=(50_000, output["dust_ratio"].shape[1]),
-            #     compressor=Blosc(cname="zstd", clevel=3),
-            # )
-
 
         # --Dust ratios--
         if has_ratio:
             arr = output["dust_ratio"]
-
             root.create_dataset(
                 "dust_ratio",
                 shape=arr.shape,
@@ -147,6 +151,7 @@ class Convert:
         root.attrs.update({
             "schema_version": int(1),
             "nb_cells": int(N),
+            #"nb_fluids": int(self.unit_l),
             "l_cm": float(self.l_cm),
             "l_m": float(self.unit_l),
         })
@@ -155,7 +160,6 @@ class Convert:
             root.attrs["ramses_output_num"] = int(ramses_num)
 
         return root
-
 
 
     def ramses(self, ramses_dir, ramses_num, ramses_out, source, sim_param, nb_sizes):
@@ -351,7 +355,6 @@ class Convert:
                                  has_fluids=has_fluids,
                                  has_fluid_v=has_fluid_v)
 
-
         # print("shape of output['Tgas']: ", output['Tgas'].shape)
         # print("shape of output['x']: ", output['x'].shape)
         # print("shape of output['gas_massdensity']: ", output['gas_massdensity'].shape)
@@ -361,18 +364,22 @@ class Convert:
         # print("shape of output['velocity']: ", output['velocity'].shape)
         # print(output['dust_massdensities'][0,0])
 
-
-
-
         return root # will later be stored in the main Grid, then used to write RT files.
         
 
-    def to_radmc(self, root):
-
+    def to_radmc(self, root, hole_au):
+        #--read root
         l_m = root.attrs.get("l_m")
         nb_cells = root.attrs.get("nb_cells")
         level = root["level"]
-
+        if root["dust_massdensities"]:
+            dust_density = root["dust_massdensities"]
+            nb_dust = dust_massdensity[1]
+        else: 
+            dust_density = root["dust_massdensity"]
+            nb_dust = 0
+        x, y, z = root["x"], root["y"], root["z"]
+  
         x_min = -0.5*l_m
         y_min = -0.5*l_m
         z_min = -0.5*l_m
@@ -387,7 +394,38 @@ class Convert:
         print("    Length       (min,max)  : ", l_m/(2**max_level),",", l_m, "\n")
 
         # Initialize the octree
-        tree = OcTree.OcTree(x_min, y_min, z_min, l_m)
+        tree = OcTree(x_min, y_min, z_min, l_m)
+
+        ## Fill octree
+        for i in range(0, nb_cells):
+            # Create single cell
+            #level = data['level'][i]
+            
+            c_x = x[i] - 0.5 * l_m
+            c_y = y[i] - 0.5 * l_m
+            c_z = z[i] - 0.5 * l_m
+
+            #if root['B_']:
+                # mag_x, mag_y, mag_z = root['B'][i]
+            #if root['velocity']:
+                # vel_x, vel_y, vel_z = root['velocity'][i]
+
+            sinks = ramses.read.sink_info()
+            print(sinks)
+
+            if sinks:
+                print('get positions')
+                hole_radius_m = hole_au * au2m
+            #     for star_pos in star_positions:
+            #         # Calculate distance from the cell to the current star.
+            #         dstar = np.sqrt((c_x - star_pos[0])**2 + (c_y - star_pos[1])**2 + (c_z - star_pos[2])**2)
+            #         # If the cell is within the hole radius, set densities to zero.
+            #         if (dstar <= hole_radius_m):
+            #             print('dstar is smaller than hole_radius_m')
+            #             print("pos", c_x, c_y, c_z)
+            #             #data['densgas'][i] = 0
+            #             for j in range(n_dust): data[f'densd{(j + 1):02d}'][i] = 0
+            #             #print("dust mass density used to be", data['densd01'][i])
 
 
     def to_polaris(self):
