@@ -11,7 +11,6 @@ from radprocess.pipeline.Convert import Convert
 from radprocess import radmc3d
 from radprocess import ramses
 from radprocess.utils.config import ConfigParams
-from radprocess.constants.constants import au2cm, M_sun, R_sun
 
 class Pipeline:
 
@@ -249,11 +248,6 @@ class Pipeline:
         # Store ONLY the main dir in config
         self.configparams.pipoutput.main_output_dir = str(base)
 
-        # # Optionally expose derived paths (not stored permanently)
-        # self.ramses_outputs_dir = str(ramses_dir)
-        # self.radmc_outputs_dir = str(radmc_dir)
-        # self.polaris_outputs_dir = str(polaris_dir)
-
         return (
             f"✔ Working directory set to:\n{base}\n\n"
             f"Created/verified:\n"
@@ -349,98 +343,62 @@ class Pipeline:
     def convert_to_radmc(self):
         """
         read RAMSES Zarr root, convert it into RADMC3D intputs.
-        args: 
-            - root (Zarr file)
         outputs: 
             - amr_grid.inp, 
             - dust_density.inp, 
             - stars.inp
         """
-        ramses_dir = self.configparams.ramsesoutput.ramses_output_dir
-        radmc_dir = self.radmc_outputs_dir
-        ramses_out = self.ramses_converted_dir
+        hole_au = self.configparams.sim.size_hole_au
+        #radmc_dir = self.radmc_outputs_dir
+        zarr_dir = self.ramses_converted_dir
+
         root = None
 
-        clean = ramses_dir.strip().rstrip("/")   # remove whitespace + trailing slash
-        folder = clean.rsplit("/", 1)[0] + "/"
-        num = int(clean.rsplit("_", 1)[1])
-        
-        # -------------------------------------------------
-        # Resolve AMR Zarr root (priority: memory → disk)
-        # -------------------------------------------------
-
-    
-        # ---- 1) Check in-memory grid list first ----
+        # --------------------------------------------------
+        # 1) Try in-memory Zarr first
+        # --------------------------------------------------
         if self.grid.amr_grid:
-
-            if len(self.grid.amr_grid) > 1:
-                print("Multiple AMR grids in memory — using the first one for now, will change in the future.")
-
             root = self.grid.amr_grid[0]
 
-            try:
-                stored_num = int(root.attrs.get("ramses_output_num", -1))
-            except Exception:
-                stored_num = -1
+        # --------------------------------------------------
+        # 2) Otherwise load from disk
+        # --------------------------------------------------
+        if root is None:
+            zarr_dir = Path(zarr_dir)
 
-            if stored_num != num:
-                raise RuntimeError(
-                    f"In-memory AMR grid corresponds to RAMSES output {stored_num}, "
-                    f"but requested {num}. Please reload RAMSES and/or check consistency with RAMSES number simu."
-                )
+            if not zarr_dir.exists():
+                raise RuntimeError("No RAMSES Zarr directory found.")
 
-        # ---- 2) Otherwise look on disk ----
-        else:
-            ramses_dir = Path(self.ramses_converted_dir)
-
-            if not ramses_dir.exists():
-                raise FileNotFoundError(
-                    f"RAMSES converted directory does not exist:\n{ramses_dir}"
-                )
-
-            # Find matching Zarr folder
-            candidates = list(ramses_dir.glob(f"*{num}*.zarr"))
+            candidates = list(zarr_dir.glob("*.zarr"))
 
             if not candidates:
-                raise FileNotFoundError(
-                    f"No Zarr AMR grid found for RAMSES output {num} in:\n{ramses_dir}"
-                )
+                raise RuntimeError("No Zarr files found in ramses_converted_dir.")
 
-            if len(candidates) > 1:
-                raise RuntimeError(
-                    f"Multiple Zarr grids match output {num}:\n"
-                    + "\n".join(str(c) for c in candidates)
-                )
+            # For now assume single Zarr
+            root = zarr.open(candidates[0], mode="r")
 
-            zarr_path = candidates[0]
-            root = zarr.open(zarr_path, mode="r")
+            # Store back into Grid for later steps
+            self.grid.amr_grid = [root]
 
-            # Sanity check attribute
-            try:
-                stored_num = int(root.attrs.get("ramses_output_num", -1))
-            except Exception:
-                stored_num = -1
+        # --------------------------------------------------
+        # 3) Extract RAMSES output number from Zarr
+        # --------------------------------------------------
+        if "ramses_output_num" not in root.attrs:
+            raise RuntimeError("Zarr root missing 'ramses_output_num' attribute.")
 
-            if stored_num != num:
-                raise RuntimeError(
-                    f"Zarr grid {zarr_path.name} claims RAMSES output {stored_num}, "
-                    f"but requested {num}."
-                )
+        num = int(root.attrs["ramses_output_num"])
 
-            # Cache into Grid for later reuse
-            self.grid.add_amr_grid(root)
+        print(f"Using RAMSES output #{num} from Zarr")
 
-        # root is now guaranteed valid
-
-        radmc_grid = self.convert.to_radmc(root)
+        # --------------------------------------------------
+        # 4) Run and store conversion
+        # --------------------------------------------------
+        radmc_grid = self.convert.to_radmc(root, hole_au)
         self.grid.add_radmc_grid(radmc_grid)
 
 
         # nb_sizes = self.configparams.nb_dust
         # sim_param = self.configparams.sim
 
-        # clean = ramses_dir.strip().rstrip("/")   # remove whitespace + trailing slash
-        # folder = clean.rsplit("/", 1)[0] + "/"
-        # num = int(clean.rsplit("_", 1)[1])
 
 
