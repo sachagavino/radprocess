@@ -31,6 +31,95 @@ class Pipeline:
     def polaris_outputs_dir(self):
         return Path(self.configparams.pipoutput.main_output_dir) / "polaris"
 
+    def get_amr_root(self):
+        """
+        Locate and return the RAMSES AMR Zarr root.
+
+        Order:
+          1) in-memory Grid
+          2) on disk in ramses_converted_dir
+
+        Also validates presence of required metadata.
+
+        Returns
+        -------
+        root : zarr.Group
+
+        Raises
+        ------
+        RuntimeError if not found or invalid.
+        """
+
+        root = None
+
+        # --------------------------------------------------
+        # 1) In-memory
+        # --------------------------------------------------
+        if self.grid.amr_grid:
+            root = self.grid.amr_grid[0]
+
+        # --------------------------------------------------
+        # 2) Disk
+        # --------------------------------------------------
+        if root is None:
+
+            zarr_dir = Path(self.ramses_converted_dir)
+
+            if not zarr_dir.exists():
+                raise RuntimeError(
+                    "No RAMSES Zarr directory found. "
+                    "Run 'Create RAMSES grid' first."
+                )
+
+            candidates = list(zarr_dir.glob("*.zarr"))
+
+            if not candidates:
+                raise RuntimeError(
+                    "No Zarr files found in ramses_converted_dir."
+                )
+
+            # For now assume single Zarr
+            root = zarr.open(candidates[0], mode="r")
+
+            # Cache for later steps
+            self.grid.amr_grid = [root]
+
+        # --------------------------------------------------
+        # 3) Validate
+        # --------------------------------------------------
+        if "ramses_output_num" not in root.attrs:
+            raise RuntimeError(
+                "Zarr root missing 'ramses_output_num' attribute."
+            )
+
+        if "nb_cells" not in root.attrs:
+            raise RuntimeError(
+                "Zarr root missing 'nb_cells' attribute."
+            )
+
+        return root
+
+    def get_amr_fields(self):
+        """
+        Return available scalar/vector fields from AMR Zarr root.
+        """
+
+        root = self.get_amr_root()   # <-- IMPORTANT (loads from disk if needed)
+
+        # root is now guaranteed to exist or raise
+
+        fields = []
+
+        for key in root.array_keys():
+            # skip coordinates if you want
+            if key in ("x", "y", "z", "dx", "level"):
+                continue
+            fields.append(key)
+
+        return sorted(fields)
+
+
+
     def get_enabled_amr_fields(self):
 
         if getattr(self.configparams.amrsource, "temp", False):
@@ -204,30 +293,6 @@ class Pipeline:
         # Write the file
         ramses.write.pymsesrc(ramses_dir)
     
-    # def set_radmc3d_dir(self, path):
-    #     """
-    #     Ensure a RADMC-3D directory exists, store it in configparams,
-    #     and optionally read wavelength/dust files if present.
-    #     Returns a summary string for UI display.
-    #     """
-    #     # 1. Create directory if needed
-    #     if not os.path.isdir(path):
-    #         os.makedirs(path, exist_ok=True)
-    #         created = True
-    #     else:
-    #         created = False
-
-    #     # 2. Store the directory in config
-    #     self.configparams.pipoutput.radmc_output_dir = path
-
-    #     messages = []
-    #     if created:
-    #         messages.append(f"Created RADMC-3D directory:\n  {self.configparams.pipoutput.radmc_output_dir}")
-    #     else:
-    #         messages.append(f"Using existing RADMC-3D directory:\n  {self.configparams.pipoutput.radmc_output_dir}")
-    
-    #     return "\n".join(messages)
-
     def set_working_dir(self, workdir):
         """
         Set main pipeline output directory and create subfolders:
@@ -256,8 +321,7 @@ class Pipeline:
             f" - {base / 'polaris'}"
         )
 
-
-        
+  
     def thermal_radmc3d(self,
                         run=True, 
                         nphot=1e4, 
@@ -341,64 +405,25 @@ class Pipeline:
         self.grid.add_amr_grid(amr_grid)
 
     def convert_to_radmc(self):
-        """
-        read RAMSES Zarr root, convert it into RADMC3D intputs.
-        outputs: 
-            - amr_grid.inp, 
-            - dust_density.inp, 
-            - stars.inp
-        """
+
         hole_au = self.configparams.sim.size_hole_au
-        #radmc_dir = self.radmc_outputs_dir
-        zarr_dir = self.ramses_converted_dir
-
-        root = None
 
         # --------------------------------------------------
-        # 1) Try in-memory Zarr first
+        # 1) Extract RAMSES output number from Zarr
         # --------------------------------------------------
-        if self.grid.amr_grid:
-            root = self.grid.amr_grid[0]
-
-        # --------------------------------------------------
-        # 2) Otherwise load from disk
-        # --------------------------------------------------
-        if root is None:
-            zarr_dir = Path(zarr_dir)
-
-            if not zarr_dir.exists():
-                raise RuntimeError("No RAMSES Zarr directory found.")
-
-            candidates = list(zarr_dir.glob("*.zarr"))
-
-            if not candidates:
-                raise RuntimeError("No Zarr files found in ramses_converted_dir.")
-
-            # For now assume single Zarr
-            root = zarr.open(candidates[0], mode="r")
-
-            # Store back into Grid for later steps
-            self.grid.amr_grid = [root]
-
-        # --------------------------------------------------
-        # 3) Extract RAMSES output number from Zarr
-        # --------------------------------------------------
-        if "ramses_output_num" not in root.attrs:
-            raise RuntimeError("Zarr root missing 'ramses_output_num' attribute.")
+        root = self.get_amr_root()
 
         num = int(root.attrs["ramses_output_num"])
-
         print(f"Using RAMSES output #{num} from Zarr")
 
         # --------------------------------------------------
-        # 4) Run and store conversion
+        # 2) Run and store conversion
         # --------------------------------------------------
         radmc_grid = self.convert.to_radmc(root, hole_au)
         self.grid.add_radmc_grid(radmc_grid)
-
-
         # nb_sizes = self.configparams.nb_dust
         # sim_param = self.configparams.sim
+
 
 
 

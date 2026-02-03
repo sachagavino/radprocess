@@ -12,7 +12,7 @@ from gradio import Dropdown
 
 from radprocess.utils.config import ConfigParams
 from radprocess.pipeline.Pipeline import Pipeline
-from radprocess.plotting.plot import plot_sink_columns
+from radprocess.plotting.plot import plot_sink_columns, plot_ramses_histogram
 
 # -----------------------------
 # Paths
@@ -739,7 +739,85 @@ def launch_interface():
 
                         # --------- MAIN Results Tab ---------
                         with gr.Tab("Pipeline Results"):
-                            print('nothing here') 
+
+                            with gr.Tab("RAMSES grid"):
+
+                                gr.Markdown("### RAMSES diagnostics")
+
+                                with gr.Row():
+
+                                    plot_type_dd = gr.Dropdown(
+                                        choices=["Histogram"],
+                                        value="Histogram",
+                                        label="Plot type",
+                                        interactive=True,
+                                    )
+
+                                    hist_y_dropdown = gr.Dropdown(
+                                        choices=[],
+                                        label="Y-axis field",
+                                    )
+
+                                    hist_plot_button = gr.Button("Plot histogram", variant="secondary")
+
+                                hist_plot = gr.Plot()
+
+                                def generate_ramses_histogram(y_field, cfg, pipe):
+                                    if not y_field:
+                                        return None
+
+                                    try:
+                                        pipe.configparams = cfg
+                                        root = pipe.get_amr_root()
+                                        fig = plot_ramses_histogram(root, y_field)
+                                        return fig
+                                    except Exception as e:
+                                        print(e)
+                                        return None
+
+                                hist_plot_button.click(
+                                    fn=generate_ramses_histogram,
+                                    inputs=[hist_y_dropdown, cfg_state, pipe_state],
+                                    outputs=[hist_plot],
+                                )
+
+
+
+
+                                # def generate_ramses_histogram(yfield, cfg, pipe):
+                                #     """
+                                #     Temporary dummy histogram.
+                                #     Later this will call radprocess.plotting.plot.ramses_histogram().
+                                #     """
+
+                                #     # Just to verify plumbing works:
+                                #     import matplotlib.pyplot as plt
+                                #     import numpy as np
+
+                                #     fig, ax = plt.subplots()
+
+                                #     x = np.random.rand(1000)
+                                #     y = np.random.rand(1000)
+
+                                #     ax.scatter(x, y, s=2)
+                                #     ax.set_xlabel("dust density (dummy)")
+                                #     ax.set_ylabel(yfield if yfield else "Y")
+
+                                #     ax.set_title("Dummy RAMSES histogram")
+
+                                #     return fig
+
+
+
+
+
+
+
+ 
+                            with gr.Tab("RADMC3D"):
+                                print("radmc3d grid")
+
+                            
 
 
 
@@ -767,24 +845,33 @@ def launch_interface():
         )
 
 
+        # ---------- Callback on RAMSES histogram ----------
+        def update_histogram_fields(cfg, pipe):
+            try:
+                pipe.configparams = cfg
+                fields = pipe.get_amr_fields()
+
+                # Remove coordinates
+                fields = [f for f in fields if f not in ("x", "y", "z", "dx", "level")]
+
+                # prefer plural if present
+                if "dust_massdensities" in fields and "dust_massdensity" in fields:
+                    fields.remove("dust_massdensities")
+
+                return gr.update(choices=fields, value=fields[0] if fields else None)
+            except Exception as e:
+                print("Histogram field error:", e)
+                return gr.update(choices=[], value=None)
 
 
 
-        # # ---------- Callback for Read RADMC3D button ----------
-        # def on_set_radmc3d(radmc_dir, cfg, pipe):
-        #     try:
-        #         # ensure pipeline uses the provided cfg
-        #         pipe.configparams = cfg
-        #         info = pipe.set_radmc3d_dir(radmc_dir)
-        #         return info, cfg, pipe
-        #     except Exception as e:
-        #         return f"Error: {e}", cfg, pipe
+        plot_type_dd.change(
+            fn=update_histogram_fields,
+            inputs=[cfg_state, pipe_state],
+            outputs=[hist_y_dropdown],
+        )
 
-        # set_radmc3d_button.click(
-        #     fn=on_set_radmc3d,
-        #     inputs=[radmc3d_dir_input, cfg_state, pipe_state],
-        #     outputs=[radmc_status_box, cfg_state, pipe_state]
-        # )
+
 
         # ---------- Callback for Pipeline output ----------
         def on_set_workdir(workdir, cfg, pipe):
@@ -798,35 +885,14 @@ def launch_interface():
         set_workdir_button.click(
             fn=on_set_workdir,
             inputs=[workdir_input, cfg_state, pipe_state],
-            outputs=[workdir_status_box, cfg_state, pipe_state]
+            outputs=[workdir_status_box, cfg_state, pipe_state],
+        ).then(
+            fn=update_histogram_fields,
+            inputs=[cfg_state, pipe_state],
+            outputs=[hist_y_dropdown],
         )
 
 
-
-
-        # # ---------- Callback for Read POLARIS button ----------
-        # def on_set_polaris(polaris_dir, cfg, pipe):
-        #     try:
-        #         # ensure pipeline uses the provided cfg
-        #         pipe.configparams = cfg
-        #         info = pipe.set_polaris_dir(polaris_dir)
-        #         return info, cfg, pipe
-        #     except Exception as e:
-        #         return f"Error: {e}", cfg, pipe
-
-        # set_polaris_button.click(
-        #     fn=on_set_polaris,
-        #     inputs=[polaris_dir_input, cfg_state, pipe_state],
-        #     outputs=[polaris_status_box, cfg_state, pipe_state]
-        # )
-
-
-
-        # create_amr_button.click(
-        #     fn=on_convert_stream,
-        #     inputs=[cfg_state, pipe_state],
-        #     outputs=convert_log
-        # )
 
 
         # ---------- Update dropdowns when column names are ready ----------
