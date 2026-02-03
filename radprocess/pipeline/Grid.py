@@ -2,8 +2,8 @@
 _____________________________________________________________________________________________________________
 file name: Grid
 @author: S. Gavino for chemistry codes.
-last update: Jul 2025
-language: PYTHON 3.10
+last update: jan 2026
+language: PYTHON 3.12 (constrained by pymses)
 short description:  class Grid for both radmc3d and polaris. 
 _____________________________________________________________________________________________________________
 """

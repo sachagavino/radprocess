@@ -33,7 +33,8 @@ class Convert:
         self.unit_l = None
 
     def write_amr_to_zarr(self,
-                          output, 
+                          output,
+                          nb_sizes,
                           store_path="amr_grid.zarr", 
                           ramses_num=None,
                           has_temp=False, 
@@ -151,7 +152,7 @@ class Convert:
         root.attrs.update({
             "schema_version": int(1),
             "nb_cells": int(N),
-            #"nb_fluids": int(self.unit_l),
+            "nb_species": int(nb_sizes),
             "l_cm": float(self.l_cm),
             "l_m": float(self.unit_l),
         })
@@ -346,7 +347,7 @@ class Convert:
             print("*************************************************")
 
 
-        root = self.write_amr_to_zarr(output, 
+        root = self.write_amr_to_zarr(output, nb_sizes,
                                  store_path = ramses_out / f"output{ramses_num}_grid.zarr", 
                                  ramses_num=ramses_num, 
                                  has_temp=has_temp, 
@@ -355,14 +356,6 @@ class Convert:
                                  has_fluids=has_fluids,
                                  has_fluid_v=has_fluid_v)
 
-        # print("shape of output['Tgas']: ", output['Tgas'].shape)
-        # print("shape of output['x']: ", output['x'].shape)
-        # print("shape of output['gas_massdensity']: ", output['gas_massdensity'].shape)
-        # print("shape of output['dust_massdensity']: ", output['dust_massdensity'].shape)
-        # print("shape of output['dust_massdensities']: ", output['dust_massdensities'].shape)
-        # print("shape of output['fluid_v']: ", output['fluid_v'].shape)
-        # print("shape of output['velocity']: ", output['velocity'].shape)
-        # print(output['dust_massdensities'][0,0])
 
         return root # will later be stored in the main Grid, then used to write RT files.
         
