@@ -24,8 +24,6 @@ __pycache__/
 *.tar
 *.zip
 
-
-
 # Distribution / packaging
 bin/
 build/
@@ -40,6 +38,7 @@ var/
 *.egg-info/
 .installed.cfg
 *.egg
+.venv
 
 chemdisk-token.txt
 
