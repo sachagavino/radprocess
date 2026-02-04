@@ -363,10 +363,11 @@ class Convert:
     def to_radmc(self, root, hole_au):
         #--read root
         l_m = root.attrs.get("l_m")
+        l_cm = root.attrs.get("l_cm")
         nb_cells = root.attrs.get("nb_cells")
         level = root["level"]
-        if root["dust_massdensities"]:
-            dust_density = root["dust_massdensities"]
+        if "dust_massdensities" in root:
+            dust_massdensity = root["dust_massdensities"]
             nb_dust = dust_massdensity[1]
         else: 
             dust_density = root["dust_massdensity"]
@@ -419,6 +420,22 @@ class Convert:
             #             #data['densgas'][i] = 0
             #             for j in range(n_dust): data[f'densd{(j + 1):02d}'][i] = 0
             #             #print("dust mass density used to be", data['densd01'][i])
+
+        # print("Writing the amr_grid.inp file for RADMC-3D...\n")
+        # with open(outpath + 'amr_grid.inp','w+') as f:
+        #     f.write("1\n")                                                  # iformat (typically 1 at present)
+        #     f.write("1\n")                                                  # grid style (1: Oct-tree)
+        #     f.write("1\n")                                                  # coordinates (cartesian if < 100)
+        #     f.write("0\n")                                                  # gridinfo (0 recommended)
+        #     f.write("1\t1\t1\n")                                            # incl_x, incl_y, incl_z
+        #     f.write("1\t1\t1\n")                                            # nx, ny, nz
+        #     f.write("%d\t%d\t%d\n" % (max_level, nb_cells, len(grid)))   # levelmax, nleafsmax, nbranchmax
+        #     f.write("%e\t%e\n" % (-l_cm / 2, l_cm / 2))
+        #     f.write("%e\t%e\n" % (-l_cm / 2, l_cm / 2))
+        #     f.write("%e\t%e\n" % (-l_cm / 2, l_cm / 2))
+
+        #     for i in range(len(grid)):
+        #         f.write("%d\n" % grid[i])
 
 
     def to_polaris(self):

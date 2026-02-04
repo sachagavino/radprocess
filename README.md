@@ -14,6 +14,13 @@ Here is the pipeline dashboard:
 ## User's guide
 It is strongly recommanded to read the installation procedure in the radprocess documentation [here][1].
 
+## External requirements (not installable via pip):
+
+- RAMSES
+- RADMC3D
+- POLARIS
+- PyMSES (see custom fork)
+
 ## Branches
 main: stable up-to-date version.
 

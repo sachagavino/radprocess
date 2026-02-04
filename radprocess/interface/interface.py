@@ -478,11 +478,11 @@ def launch_interface():
                     with gr.Tabs() as radmc_tabs_row:
                         # --------- Working directory Tab ---------
                         with gr.Tab("radmc3d.inp"):
-                            print('nothing')
+                            pass
                         with gr.Tab("wavelength_microns.inp"):
-                            print('nothing')
+                            pass
                         with gr.Tab("stars.inp"):
-                            print('nothing')
+                            pass
 
                 # --------- POLARIS Tab (empty) ---------
                 with gr.Tab("POLARIS Section"):
@@ -731,11 +731,55 @@ def launch_interface():
                                 )
 
 
-
-
-
                             with gr.Tab("Jobs"):
-                                print('empty:')
+
+                                gr.Markdown("### Job submission")
+
+                                with gr.Row():
+
+                                    # ---------------- Left column ----------------
+                                    with gr.Column(scale=1):
+
+                                        job_backend_dd = gr.Dropdown(
+                                            choices=["SLURM", "HTCondor"],
+                                            value="SLURM",
+                                            label="Scheduler",
+                                            interactive=True,
+                                        )
+
+                                        submit_job_button = gr.Button("Submit job")
+
+                                    # ---------------- Right column ----------------
+                                    with gr.Column(scale=2):
+
+                                        # ---- SLURM options ----
+                                        with gr.Group(visible=True) as slurm_opts:
+                                            slurm_partition = gr.Textbox(label="Partition", value="normal")
+                                            slurm_walltime = gr.Textbox(label="Walltime (HH:MM:SS)", value="01:00:00")
+
+                                        # ---- HTCondor options ----
+                                        with gr.Group(visible=False) as condor_opts:
+                                            condor_queue = gr.Textbox(label="Queue / Accounting group", value="default")
+                                            condor_walltime = gr.Textbox(label="Max runtime (seconds)", value="3600")
+
+
+                                # --------------------------------------------------
+                                # Toggle option panels when scheduler changes
+                                # --------------------------------------------------
+                                def toggle_scheduler(backend):
+                                    if backend == "SLURM":
+                                        return gr.update(visible=True), gr.update(visible=False)
+                                    else:
+                                        return gr.update(visible=False), gr.update(visible=True)
+
+                                job_backend_dd.change(
+                                    fn=toggle_scheduler,
+                                    inputs=[job_backend_dd],
+                                    outputs=[slurm_opts, condor_opts],
+                                )
+
+
+                                
 
                         # --------- MAIN Results Tab ---------
                         with gr.Tab("Pipeline Results"):
@@ -747,7 +791,7 @@ def launch_interface():
                                 with gr.Row():
 
                                     plot_type_dd = gr.Dropdown(
-                                        choices=["Histogram"],
+                                        choices=["Histogram", "dust density"],
                                         value="Histogram",
                                         label="Plot type",
                                         interactive=True,
@@ -758,7 +802,7 @@ def launch_interface():
                                         label="Y-axis field",
                                     )
 
-                                    hist_plot_button = gr.Button("Plot histogram", variant="secondary")
+                                    hist_plot_button = gr.Button("Plot", variant="secondary")
 
                                 hist_plot = gr.Plot()
 
