@@ -39,6 +39,7 @@ var/
 .installed.cfg
 *.egg
 .venv
+*.lock
 
 chemdisk-token.txt
 
