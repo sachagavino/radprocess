@@ -8,9 +8,8 @@ import numpy as np
 from radprocess.utils.ramsesinfo import SinkInfo
 
 def get_snapshot_number(input_string):
-    """Splits a string at the underscore and returns the part after it."""
+    input_string = str(input_string)   # <-- normalize here
     return input_string.split('_')[-1].split('/')[0] if '_' in input_string else None
-
 
 def hydro_file_descriptor(path):
     """
@@ -125,55 +124,64 @@ def other_file_descriptor(path):
 
 
 
+from pathlib import Path
+import numpy as np
+
 def sink_info(path):
     """Parses the sink file to extract information about sinks."""
-    
+
+    path = Path(path)
+
     model_nb = get_snapshot_number(path)
-    filename = f"sink_{model_nb}.info"
+    filename  = f"sink_{model_nb}.info"
     filename2 = f"sink_{model_nb}.csv"
-    filepath = path + filename
-    filepath2 = path + filename2
+
+    filepath  = path / filename
+    filepath2 = path / filename2
 
     with open(filepath, 'r') as file:
         lines = file.readlines()
 
-    # Extract the number of sinks from line 1
+    # Extract the number of sinks
     num_sinks = int(lines[0].split('=')[1].strip())
 
-    # --- Column names on line 3 (index 2) ---
+    # Column names
     column_sinks = lines[2].split()
 
+    # Load numeric sink data
     sinks = np.loadtxt(filepath2, delimiter=',')
+
+    # --- FORCE 2D ---
+    if sinks.ndim == 1:
+        sinks = sinks[np.newaxis, :]
 
     rows = []
 
-    # --- Parse all sink entries ---
-    # sink lines start at line 4 (index 4) and end before last separator line
+    # Parse sink entries from text file
     for line in lines[4:]:
         line = line.strip()
 
-        # stop before the last line of ====== separator
         if line.startswith("===="):
             break
-
         if not line:
             continue
 
         parts = line.split()
-        if len(parts) != len(column_sinks):
-            # Some sink lines may include ******** fields → still readable
-            # Ensure alignment by trimming or padding
-            parts = parts[:len(column_sinks)]
+        parts = parts[:len(column_sinks)]
 
-        rows.append({column_sinks[i]: parts[i] for i in range(len(column_sinks))})
+        rows.append({column_sinks[i]: parts[i]
+                     for i in range(len(column_sinks))})
 
+    # Optional safety check
+    assert sinks.shape[0] == num_sinks
 
     return SinkInfo(
         columns=column_sinks,
-        rows=rows,  # list of one row
+        rows=rows,
         num_sinks=num_sinks,
         data=sinks
     )
+
 
 
 

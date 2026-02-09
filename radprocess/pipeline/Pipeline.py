@@ -404,9 +404,11 @@ class Pipeline:
 
         self.grid.add_amr_grid(amr_grid)
 
-    def convert_to_radmc(self):
-
+    def convert_to_radmc(self, gridstyle="octtree", coordsystem="cartesian"):
+        ramses_dir = self.configparams.ramsesoutput.ramses_output_dir
+        radmc_dir = self.radmc_outputs_dir
         hole_au = self.configparams.sim.size_hole_au
+        f_acc = self.configparams.sim.facc
 
         # --------------------------------------------------
         # 1) Extract RAMSES output number from Zarr
@@ -419,7 +421,13 @@ class Pipeline:
         # --------------------------------------------------
         # 2) Run and store conversion
         # --------------------------------------------------
-        radmc_grid = self.convert.to_radmc(root, hole_au)
+        radmc_grid, radmc_dens = self.convert.to_radmc(ramses_dir, 
+                                                       radmc_dir, 
+                                                       root, 
+                                                       hole_au,
+                                                       f_acc,  
+                                                       gridstyle=gridstyle, 
+                                                       coordsystem=coordsystem)
         self.grid.add_radmc_grid(radmc_grid)
         # nb_sizes = self.configparams.nb_dust
         # sim_param = self.configparams.sim

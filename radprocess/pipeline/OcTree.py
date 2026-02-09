@@ -18,6 +18,14 @@ class OcTree:
     """written by Stefan Reiss"""
     def __init__(self, _x_min, _y_min, _z_min, _length):
         self.root = CellOct(_x_min, _y_min, _z_min, _length, 0)
+        self.cell_counter = 0
+        self.nr_of_cells = 0
+
+    def reset_counter(self):
+        """Reset the cell counter to zero."""
+        self.cell_counter = 0
+
+
 
     def initCellBoundaries(self, cell,_level):
         x_min = cell.x_min
@@ -96,8 +104,6 @@ class OcTree:
 
 
     def writeOcTree(self, file, cell):
-        global cell_counter
-        global nr_of_cells
 
         file.write(struct.pack("H", cell.isleaf))
         file.write(struct.pack("H", cell.level))   
@@ -105,11 +111,11 @@ class OcTree:
         if cell.isleaf == 1:    
             data_len = len(cell.data)
             
-            if cell_counter % 10000 == 0:
-                sys.stdout.write('-> Writing octree grid file : ' + str(100.0 * cell_counter / nr_of_cells) + ' %     \r')
+            if self.cell_counter % 10000 == 0:
+                sys.stdout.write('-> Writing octree grid file : ' + str(100.0 * self.cell_counter / self.nr_of_cells) + ' %     \r')
                 sys.stdout.flush()
                 
-            cell_counter += 1 
+            self.cell_counter += 1 
          
             for i in range(0, data_len):
                 file.write(struct.pack("f", cell.data[i]))
@@ -119,8 +125,6 @@ class OcTree:
                 
                 
     def checkOcTree(self, cell):
-        global cell_counter
-        global nr_of_cells
 
         if cell.isleaf == 1:    
             length = len(cell.data)
@@ -129,11 +133,11 @@ class OcTree:
                 return False
             
             
-            if cell_counter % 10000 == 0:
-                sys.stdout.write('-> Checking octree integrity : ' + str(100.0 * cell_counter / nr_of_cells) + ' %     \r')
+            if self.cell_counter % 10000 == 0:
+                sys.stdout.write('-> Checking octree integrity : ' + str(100.0 * self.cell_counter / self.nr_of_cells) + ' %     \r')
                 sys.stdout.flush()
                 
-            cell_counter += 1    
+            self.cell_counter += 1    
             
         else:
             length = len(cell.branches)
@@ -146,22 +150,21 @@ class OcTree:
                 
         return True
                 
-    def writeOcTree_radmc(self, cell, grid, density, temp):
-        global cell_counter
-        global nr_of_cells
-
+    def writeOcTree_radmc(self, cell, grid, density): ###possibility to add temp, and others.
+  
         if cell.isleaf == 1:    
             data_len = len(cell.data)
             
-            if cell_counter % 10000 == 0:
-                sys.stdout.write('-> Writing octree grid file : ' + str(100.0 * cell_counter / nr_of_cells) + ' %     \r')
+            if self.cell_counter % 10000 == 0:
+                sys.stdout.write('-> Writing octree grid file : ' + str(100.0 * self.cell_counter / self.nr_of_cells) + ' %     \r')
                 sys.stdout.flush()
                 
-            cell_counter += 1
+            self.cell_counter += 1
                 
-            density.append(cell.data[0])
+            density.append(cell.data)
+            #density.append(cell.data)
 
-            temp.append(cell.data[3])
+            #temp.append(cell.data[3])
 
             grid.append(0)
 
@@ -169,4 +172,4 @@ class OcTree:
             grid.append(1)
             
             for i in range(8):
-                self.writeOcTree_radmc(cell.branches[i], grid, density, temp)
+                self.writeOcTree_radmc(cell.branches[i], grid, density)
