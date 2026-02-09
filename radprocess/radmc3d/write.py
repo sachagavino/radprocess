@@ -1,3 +1,6 @@
+
+from pathlib import Path
+
 def control(incl_dust=None, incl_lines=None, incl_freefree=None, \
         nphot_therm=None, nphot_scat=None, nphot_mono=None, nphot_spec=None, iseed=None, \
         ifast=None, enthres=None, itempdecoup=None, istar_sphere=None, \
@@ -141,30 +144,40 @@ def control(incl_dust=None, incl_lines=None, incl_freefree=None, \
 
     f.close()
 
-def stars(rstar, mstar, lam, xstar, ystar, zstar, tstar=None, fstar=None):
-    nstars = len(rstar)
+#def stars(radpath, rstar, mstar, lam, xstar, ystar, zstar, tstar=None, fstar=None):
+def stars(radpath,  nstars, masses, pos, radii, lam, teff):
+
+
+    radpath = Path(radpath)
+    filepath = radpath / "stars.inp"
+    #nstars = len(rstar)
     nlam = len(lam)
 
-    f = open("thermal/stars.inp","w")
+    with open(filepath, "w") as f:
 
-    f.write(str(2)+"\n")
-    f.write("{0:d}  {1:d}\n".format(nstars, nlam))
+        f.write(str(2)+"\n")
+        f.write("{0:d}  {1:d}\n".format(nstars, nlam))
 
-    for istar in range (nstars):
-        f.write("{0:e}   {1:e}   {2:e}   {3:e}   {4:e}\n".format(rstar[istar], \
-                mstar[istar], xstar[istar], ystar[istar], zstar[istar]))
+        for istar in range (nstars):
+            f.write("{0:e}   {1:e}   {2:e}   {3:e}   {4:e}\n".format(
+                radii[istar],
+                masses[istar],
+                pos[istar, 0],
+                pos[istar, 1],
+                pos[istar, 2]
+            ))
 
-    for ilam in range(nlam):
-        f.write("{0:e}\n".format(lam[ilam]))
+        for ilam in range(nlam):
+            f.write("{0:e}\n".format(lam[ilam]))
 
-    for istar in range(nstars):
-        if (tstar[istar] != 0):
-            f.write("{0:f}\n".format(-tstar[istar]))
-        else:
-            for i in range(nlam):
-                f.write("{0:e}\n".format(fstar[ilam]))
+        for istar in range(nstars):
+            if (teff[istar] != 0):
+                f.write("{0:f}\n".format(-teff[istar]))
+            else:
+                for i in range(nlam):
+                    f.write("{0:e}\n".format(fstar[ilam]))
 
-    f.close()
+
 
 def wavelength_micron(lam):
     nlam = len(lam)
@@ -185,52 +198,78 @@ def mcmono_wavelength_micron(lam_mono):
 
     f.close()
 
-def amr_grid(x, y, z, gridstyle="regular", coordsystem="cartesian"):
-    nx = x.size-1
-    ny = y.size-1
-    nz = z.size-1
+def amr_grid(radpath, 
+             grid, 
+             max_level,
+             nb_cells, 
+             l_cm, 
+             gridstyle="regular", 
+             coordsystem="cartesian", 
+             x=None, 
+             y=None, 
+             z=None):
 
-    incl_x = int(nx > 1)
-    incl_y = int(ny > 1)
-    incl_z = int(nz > 1)
+    radpath = Path(radpath)
+    filepath = radpath / "amr_grid.inp"
 
-    f = open("thermal/amr_grid.inp","w")
-
-    f.write(str(1)+"\n")
-
-    if (gridstyle == "regular"):
-        f.write("0\n")
-    elif (gridstyle == "octtree"):
+    with open(filepath, "w") as f:
+        # iformat (typically 1 at present)
         f.write("1\n")
-    elif (gridstyle == "amr"):
-        f.write("10\n")
 
-    if (coordsystem == "cartesian"):
+        # grid style 
+        if gridstyle == "regular":
+            f.write("0\n")
+        elif gridstyle == "octtree":
+            f.write("1\n")
+        elif gridstyle == "amr":
+            f.write("10\n")
+
+        # coordinates type
+        if coordsystem == "cartesian":
+            f.write("0\n")
+        elif coordsystem == "spherical":
+            f.write("100\n")
+        elif coordsystem == "cylindrical":
+            f.write("200\n")
+
+        # gridinfo
         f.write("0\n")
-    elif (coordsystem == "spherical"):
-        f.write("100\n")
-    elif (coordsystem == "cylindrical"):
-        f.write("200\n")
 
-    f.write("0\n")
-    f.write("{0:d}  {1:d}  {2:d}\n".format(incl_x, incl_y, incl_z))
-    f.write("{0:d}  {1:d}  {2:d}\n".format(nx, ny, nz))
+        if gridstyle == "octtree":
+            f.write("1\t1\t1\n")
+            f.write("1\t1\t1\n")
+            f.write(f"{max_level}\t{nb_cells}\t{len(grid)}\n")
+            for _ in range(3):
+                f.write(f"{-l_cm/2:e}\t{l_cm/2:e}\n")
+            for g in grid:
+                f.write(f"{g}\n")
 
-    if (gridstyle == "octtree"):
-        print("OctTree grids not yet implemented.")
-    elif (gridstyle == "amr"):
-        print("Layer-style AMR grids not yet implemented.")
+        elif gridstyle == "regular":
+            nx = x.size - 1
+            ny = y.size - 1
+            nz = z.size - 1
 
-    for i in range(nx+1):
-        f.write("{0:12.9e}\n".format(x[i]))
-    for i in range(ny+1):
-        f.write("{0:12.9e}\n".format(y[i]))
-    for i in range(nz+1):
-        f.write("{0:12.9e}\n".format(z[i]))
+            incl_x = int(nx > 1)
+            incl_y = int(ny > 1)
+            incl_z = int(nz > 1)
+
+            f.write(f"{incl_x}  {incl_y}  {incl_z}\n")
+            f.write(f"{nx}  {ny}  {nz}\n")
+
+            for xi in x:
+                f.write(f"{xi:12.9e}\n")
+            for yi in y:
+                f.write(f"{yi:12.9e}\n")
+            for zi in z:
+                f.write(f"{zi:12.9e}\n")
+
+
+        elif (gridstyle == "layer-amr"):
+            print("Layer-style AMR grids not yet implemented.")
 
     # Insert extra info for octtree and amr grids here...
 
-    f.close()
+    #f.close()
 
 def dustopac(opacity):
     '''
@@ -262,36 +301,45 @@ def dustopac(opacity):
     f.close()
 
 
-def dust_density(density, gridstyle="regular"):
+def dust_density(radpath, 
+                 density, 
+                 nb_cells,
+                 nb_sizes,
+                 gridstyle="regular"):
     '''
     Desc: write dust_density.inp
     Args: density
     '''
-    nstructures = len(density) #disk, envelope...
-    print('number of structures (disk, envelope...): ', nstructures, '\n')
-    nspecies = 0
-    for istruc in range(nstructures):
-        nspecies += len(density[istruc]) #nb of species in all structures
-        print('number of species in structure {}: '.format(istruc+1), len(density[istruc]))
-    print('total number of grain species: ', nspecies)
+    radpath = Path(radpath)
+    filepath = radpath / "dust_density.inp"
 
     if (gridstyle == "regular"):
         nx, ny, nz = density[0][0].shape
         ncells = nx*ny*nz
+        with open(filepath, "w") as f:
+            f.write("1\n")
+            f.write("{0:d}\n".format(nb_cells))
+            f.write("{0:d}\n".format(nb_sizes))
 
-    f = open("thermal/dust_density.inp","w")
-    f.write("1\n")
-    f.write("{0:d}\n".format(ncells))
-    f.write("{0:d}\n".format(nspecies))
+            for ispec in range(len(density[1])): #loop over the dust species within the given structure.
+                if (gridstyle == "regular"):
+                    for iz in range(nz):
+                        for iy in range(ny):
+                            for ix in range(nx):
+                                f.write("{0:e}\n".format(density[ispec, ix,iy,iz]))
 
-    for istruc in range(nstructures): #loop over structures (disk, envelope...)
-        for ispec in range(len(density[istruc])): #loop over the dust species within the given structure.
-            if (gridstyle == "regular"):
-                for iz in range(nz):
-                    for iy in range(ny):
-                        for ix in range(nx):
-                            f.write("{0:e}\n".format(density[istruc][ispec, ix,iy,iz]))
-    f.close()
+    elif (gridstyle == "octtree"):
+
+        #f = open("thermal/dust_density.inp","w")
+        with open(filepath, "w") as f:
+            f.write("1\n")
+            f.write("{0:d}\n".format(nb_cells))
+            f.write("{0:d}\n".format(density.shape[1]))
+
+            for i in range(density.shape[1]):
+                for j in range(density.shape[0]):
+                    f.write("\n%e" % density[j, i])
+
 
 
 def external_rad(isrf):

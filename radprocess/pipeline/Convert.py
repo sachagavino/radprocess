@@ -7,6 +7,7 @@ short description: convert from ramses to radmc3d and polaris.
 _____________________________________________________________________________________________________________
 """
 import os
+import sys
 import re
 from collections import defaultdict
 import importlib
@@ -14,7 +15,7 @@ from pathlib import Path
 
 import numpy as np
 import zarr
-from numcodecs import Blosc
+from zarr.codecs import BloscCodec
 
 import pymses
 from pymses.utils import constants as C
@@ -23,8 +24,8 @@ from pymses.filters import CellsToPoints
 from radprocess import radmc3d
 from radprocess import ramses
 
-from radprocess.pipeline.OcTree import OcTree
-from radprocess.constants.constants import Ggram, kbol, pc, amu, au2m
+from radprocess.pipeline.OcTree import OcTree, CellOct
+from radprocess.constants.constants import Ggram, kbol, pc2cm, pc2m, amu, au2m, au2cm, M_sun, L_sun, R_sun, sigma
 
 
 class Convert:
@@ -34,7 +35,7 @@ class Convert:
 
     def write_amr_to_zarr(self,
                           output,
-                          nb_sizes,
+                          nb_species,
                           store_path="amr_grid.zarr", 
                           ramses_num=None,
                           has_temp=False, 
@@ -48,7 +49,12 @@ class Convert:
         """
 
         root = zarr.open(store_path, mode="w")
-        compressor = Blosc(cname="zstd", clevel=3, shuffle=Blosc.BITSHUFFLE)
+        compressor = BloscCodec(
+            cname="zstd",
+            clevel=3,
+            shuffle="bitshuffle",
+        )
+
 
         N = output["x"].shape[0]
 
@@ -70,7 +76,7 @@ class Convert:
                 dtype=arr.dtype,
                 data=arr,
                 chunks=(100_000,),
-                compressor=compressor,
+                compressors=[compressor],
             )
 
             # root.create_dataset(
@@ -94,7 +100,7 @@ class Convert:
             dtype=arr.dtype,
             data=arr,
             chunks=chunks,
-            compressor=compressor,
+            compressors=[compressor],
         )
 
         # --Velocity field--
@@ -106,7 +112,7 @@ class Convert:
                 dtype=arr.dtype,
                 data=arr,
                 chunks=(50_000, 3),
-                compressor=compressor,
+                compressors=[compressor],
             )
 
 
@@ -119,7 +125,7 @@ class Convert:
                 dtype=arr.dtype,
                 data=arr,
                 chunks=(50_000, arr.shape[1]),
-                compressor=compressor,
+                compressors=[compressor],
             )
 
         # --Fluid velocity field--
@@ -131,7 +137,7 @@ class Convert:
                 dtype=arr.dtype,
                 data=arr,
                 chunks=(50_000, 3),
-                compressor=compressor,
+                compressors=[compressor],
             )
 
 
@@ -144,7 +150,7 @@ class Convert:
                 dtype=arr.dtype,
                 data=arr,
                 chunks=(50_000, arr.shape[1]),
-                compressor=compressor,
+                compressors=[compressor],
             )
 
         #root.attrs["n_cells"] = N
@@ -152,7 +158,7 @@ class Convert:
         root.attrs.update({
             "schema_version": int(1),
             "nb_cells": int(N),
-            "nb_species": int(nb_sizes),
+            "nb_species": int(nb_species),
             "l_cm": float(self.l_cm),
             "l_m": float(self.unit_l),
         })
@@ -163,13 +169,13 @@ class Convert:
         return root
 
 
-    def ramses(self, ramses_dir, ramses_num, ramses_out, source, sim_param, nb_sizes):
+    def ramses(self, ramses_dir, ramses_num, ramses_out, source, sim_param, nb_species):
         importlib.reload(pymses) # Reload pymses to clear internal caches. Another problem with Pymses.
 
         print(f"\n=== New RAMSES Conversion ===")
         print(f"RAMSES Folder: {ramses_dir}")
         print(f"Output: {ramses_num}")
-        print(f"Dust species detected: {nb_sizes}")
+        print(f"Dust species detected: {nb_species}")
         print(f"Enabled AMR fields: {source}\n")
     
         CLR_LINE = " " * 50 + "\r"
@@ -195,7 +201,7 @@ class Convert:
 
         snap = pymses.RamsesOutput(ramses_dir, ramses_num)
 
-        # if nb_sizes > 0 and nb_sizes != snap.info["ndust"]:
+        # if nb_species > 0 and nb_species != snap.info["ndust"]:
         #     raise ValueError(
         #         "Mismatch between grain sizes in hydro_file_descriptor.txt "
         #         "and snap.info['ndust']"
@@ -243,17 +249,17 @@ class Convert:
         #
 
         # if has_ratio:
-        #     dustratios = np.zeros((nb_sizes, nr_of_cells))
-        #     for i in range(1,nb_sizes+1):
+        #     dustratios = np.zeros((nb_species, nr_of_cells))
+        #     for i in range(1,nb_species+1):
         #         output["dust_enrich{:d}".format(i)]  = cells["dust_ratio_{:d}".format(i)]  
 
         #     epsilon_tot = np.zeros(output["dust_enrich1"].shape)
-        #     for i in range(1,nb_sizes+1):
+        #     for i in range(1,nb_species+1):
         #         epsilon_tot+=output["dust_enrich{:d}".format(i)]
         #     correction_factor = 1-epsilon_tot
         #     output["gas_massdensity"] = mp*correction_factor*output["density"] # actual gas density 
         
-        #     for i in range(1,nb_sizes+1):
+        #     for i in range(1,nb_species+1):
         #         #dustratios[i-1,:] = output["dust_enrich{:d}".format(i)]/correction_factor
         #         output["dust_ratio{:d}".format(i)] = output["dust_enrich{:d}".format(i)]/correction_factor
 
@@ -266,15 +272,15 @@ class Convert:
             #for the dust, RAMSES provides dust enrichment (not dust-to-gas mass ratio). So we derive a corretion factor to obtain the dust mass ratios.
 
             # shape: (cells, species)
-            dust_ratio = np.zeros((nr_of_cells, nb_sizes), dtype=np.float32)
-            dust_massdensity = np.zeros((nr_of_cells, nb_sizes), dtype=np.float32)
+            dust_ratio = np.zeros((nr_of_cells, nb_species), dtype=np.float32)
+            dust_massdensity = np.zeros((nr_of_cells, nb_species), dtype=np.float32)
 
             # RAMSES gives enrichment; convert to dust/gas
             epsilon_tot = np.zeros(nr_of_cells, dtype=np.float32)
 
             enrich = []
 
-            for i in range(1, nb_sizes + 1):
+            for i in range(1, nb_species + 1):
                 e = cells[f"dust_ratio_{i}"]
                 enrich.append(e)
                 epsilon_tot += e
@@ -286,16 +292,16 @@ class Convert:
                 dust_ratio[:, i-1] = e / correction_factor
 
 
-            for i in range(0, nb_sizes):
+            for i in range(0, nb_species):
                 dust_massdensity[:, i] = dust_ratio[:, i]*output["gas_massdensity"]
 
             output['dust_massdensities'] = dust_massdensity
             output['dust_massdensity']  = np.sum(dust_massdensity, axis=1)
             
         if has_fluids:
-            fluid_density = np.zeros((nr_of_cells, nb_sizes), dtype=np.float32)
+            fluid_density = np.zeros((nr_of_cells, nb_species), dtype=np.float32)
 
-            for i in range(0, nb_sizes):
+            for i in range(0, nb_species):
                 fluid_density[:, i] = fluid_cells[f"fluid_density_{i+1}"] * mp
 
             output["dust_massdensities"] = fluid_density
@@ -331,7 +337,7 @@ class Convert:
             ## mp       = mu * 1.660531e-24    # n gramme
             print("WORKING WITH mu_gas = ", mp/amu)
             scale_n  = 1.
-            scale_l  = pc
+            scale_l  = pc2cm
             scale_d  = scale_n * mp
             scale_t  = 1.0 / np.sqrt(Ggram * scale_d)
             scale_v  = scale_l / scale_t    
@@ -347,7 +353,7 @@ class Convert:
             print("*************************************************")
 
 
-        root = self.write_amr_to_zarr(output, nb_sizes,
+        root = self.write_amr_to_zarr(output, nb_species,
                                  store_path = ramses_out / f"output{ramses_num}_grid.zarr", 
                                  ramses_num=ramses_num, 
                                  has_temp=has_temp, 
@@ -360,83 +366,202 @@ class Convert:
         return root # will later be stored in the main Grid, then used to write RT files.
         
 
-    def to_radmc(self, root, hole_au):
-        #--read root
+    def to_radmc(self, ramses_dir, radmc_dir, root, hole_au, f_acc, gridstyle="octtree", coordsystem="cartesian"):
+        """
+        Convert Zarr grid data to RADMC-3D format.
+        
+        Args:
+            radmc_dir: Output directory for RADMC-3D files
+            root: Zarr root containing grid data
+            hole_au: Radius of hole around stars (in AU)
+            star_positions: List of star positions [(x,y,z), ...] in meters
+            gridstyle: Grid style for RADMC-3D
+            coordsystem: Coordinate system for RADMC-3D
+        """
+        CLR_LINE = " " * 80 + "\r"
+        
+        # Read root section
         l_m = root.attrs.get("l_m")
         l_cm = root.attrs.get("l_cm")
         nb_cells = root.attrs.get("nb_cells")
-        level = root["level"]
+        nb_species = root.attrs.get("nb_species", 1)
+        
+        level = np.array(root["level"])
+        x = np.array(root["x"])
+        y = np.array(root["y"])
+        z = np.array(root["z"])
+        
+        # Handle dust density (single species or multi-species)
         if "dust_massdensities" in root:
-            dust_massdensity = root["dust_massdensities"]
-            nb_dust = dust_massdensity[1]
+            dust_massdensity = np.array(root["dust_massdensities"])  # shape: (nb_cells, nb_species)
         else: 
-            dust_density = root["dust_massdensity"]
-            nb_dust = 0
-        x, y, z = root["x"], root["y"], root["z"]
-  
-        x_min = -0.5*l_m
-        y_min = -0.5*l_m
-        z_min = -0.5*l_m
-
-        max_level = max(level)
-        min_level = min(level)
-
-        print("\n")
-        print("Octree parameter:")
-        print("    Level        (min,max)  : ", int(min_level),",", int(max_level))
-        print("    Nr. of cells (data, max): ", nb_cells,",", 8**max_level)
-        print("    Length       (min,max)  : ", l_m/(2**max_level),",", l_m, "\n")
-
-        # Initialize the octree
+            dust_massdensity = np.array(root["dust_massdensity"])[:, np.newaxis]  # shape: (nb_cells, 1)
+        
+        # Grid bounds (centered at origin)
+        x_min = -0.5 * l_m
+        y_min = -0.5 * l_m
+        z_min = -0.5 * l_m
+        
+        max_level = int(level.max())
+        min_level = int(level.min())
+        
+        print("\nOctree parameters:")
+        print(f"    Level (min, max)     : {min_level}, {max_level}")
+        print(f"    Nr. of cells (actual): {nb_cells}")
+        print(f"    Nr. of cells (max)   : {8**max_level}")
+        print(f"    Length (min, max)    : {l_m/(2**max_level):.3e}, {l_m:.3e} m")
+        print(f"    Dust species         : {nb_species}\n")
+        
+        # Initialize octree with total cell count
         tree = OcTree(x_min, y_min, z_min, l_m)
+        tree.nr_of_cells = nb_cells
+        
+        # Convert hole radius if needed
+        hole_radius_m = hole_au * au2m if hole_au > 0 else 0
 
-        ## Fill octree
-        for i in range(0, nb_cells):
-            # Create single cell
-            #level = data['level'][i]
+        sinks = ramses.read.sink_info(ramses_dir)
+        num_sinks = sinks.num_sinks
+        columns   = sinks.columns
+        rows      = sinks.rows
+        data      = sinks.data
+
+        #TEMPORARY, DEFINE STARS PROPERTIES HERE, will change later.
+        boxlen_pc =  0.765621193260999E-01 #pc
+        lmin = 1e-3
+        lmax = 1e4
+        nlam = 210
+        lam = np.logspace(np.log10(lmin), np.log10(lmax), nlam)
+
+        if sinks.num_sinks > 0:
+            print(f"Found {sinks.num_sinks} sink(s)")
+
+            # --- positions from numeric CSV ---
+            # assuming column names, ... dangerous
+            x_idx = sinks.columns.index("x")
+            y_idx = sinks.columns.index("y")
+            z_idx = sinks.columns.index("z")
+            m_idx = sinks.columns.index("M[Msol]")
+            accrate_idx = sinks.columns.index("acc_rate[Msol/y]")
+            acclum_idx = sinks.columns.index("acc_lum[Lsol]")
+            intlum_idx = sinks.columns.index("int_lum[Lsol]")
             
+            sec_yr = 365*24*60*60
+            sink_positions  = (sinks.data[:, [x_idx, y_idx, z_idx]]- boxlen_pc / 2.0)
+            sink_masses     = sinks.data[:, m_idx]*M_sun
+            acc_rate        = sinks.data[:, accrate_idx]*M_sun/sec_yr
+            lint            = sinks.data[:, intlum_idx]*L_sun
+            lacc            = sinks.data[:, acclum_idx]*L_sun
+            ltot            = lint+lacc
+            sink_radii      = f_acc * Ggram * sink_masses*acc_rate/lacc
+            sink_teff       = (ltot/(4*np.pi*sigma*sink_radii**2))**(1/4)
+
+            #sink_positions = sink_positions - boxlen_pc / 2.0
+
+        else:
+            print("No sinks found")
+        
+        # Fill octree
+        print("Constructing octree...")
+        hole_radius2 = (hole_au * au2m)**2
+        for i in range(nb_cells):
+            # Cell position (centered coordinates)
             c_x = x[i] - 0.5 * l_m
             c_y = y[i] - 0.5 * l_m
             c_z = z[i] - 0.5 * l_m
+            
+            # Get dust density for this cell
+            cell_dust_density = dust_massdensity[i, :].copy()
 
-            #if root['B_']:
-                # mag_x, mag_y, mag_z = root['B'][i]
-            #if root['velocity']:
-                # vel_x, vel_y, vel_z = root['velocity'][i]
+            if sinks.num_sinks > 0:
+                for star_pos in sink_positions:
+                    # Calculate distance from the cell to the current star.
+                    d2 = (
+                        (c_x - star_pos[0]*pc2m)**2 +
+                        (c_y - star_pos[1]*pc2m)**2 +
+                        (c_z - star_pos[2]*pc2m)**2
+                    )
+                    # If the cell is within the hole radius, set densities to zero.
+                    if d2 <= hole_radius2:
+                        print('dstar is smaller than hole_radius_m')
+                        print("pos", c_x, c_y, c_z)
+                        #data['densgas'][i] = 0
+                        for j in range(nb_species): cell_dust_density[i] = 0
+                        break
+                        #print("dust mass density used to be", data['densd01'][i])
 
-            sinks = ramses.read.sink_info()
-            print(sinks)
+            else:
+                print("No sinks found, no hole carved")
 
-            if sinks:
-                print('get positions')
-                hole_radius_m = hole_au * au2m
-            #     for star_pos in star_positions:
-            #         # Calculate distance from the cell to the current star.
-            #         dstar = np.sqrt((c_x - star_pos[0])**2 + (c_y - star_pos[1])**2 + (c_z - star_pos[2])**2)
-            #         # If the cell is within the hole radius, set densities to zero.
-            #         if (dstar <= hole_radius_m):
-            #             print('dstar is smaller than hole_radius_m')
-            #             print("pos", c_x, c_y, c_z)
-            #             #data['densgas'][i] = 0
-            #             for j in range(n_dust): data[f'densd{(j + 1):02d}'][i] = 0
-            #             #print("dust mass density used to be", data['densd01'][i])
+            # Create cell and insert into tree
+            cell = CellOct(c_x, c_y, c_z, 0, level[i])
+            cell.data = cell_dust_density.tolist()
+            
+            tree.insertInTree(tree.root, cell, 0)
+            
+            # Progress indicator
+            if i % 10000 == 0:
+                progress = 100.0 * i / nb_cells
+                sys.stdout.write(f"Constructing octree: {progress:.1f}%\r")
+                sys.stdout.flush()
 
-        # print("Writing the amr_grid.inp file for RADMC-3D...\n")
-        # with open(outpath + 'amr_grid.inp','w+') as f:
-        #     f.write("1\n")                                                  # iformat (typically 1 at present)
-        #     f.write("1\n")                                                  # grid style (1: Oct-tree)
-        #     f.write("1\n")                                                  # coordinates (cartesian if < 100)
-        #     f.write("0\n")                                                  # gridinfo (0 recommended)
-        #     f.write("1\t1\t1\n")                                            # incl_x, incl_y, incl_z
-        #     f.write("1\t1\t1\n")                                            # nx, ny, nz
-        #     f.write("%d\t%d\t%d\n" % (max_level, nb_cells, len(grid)))   # levelmax, nleafsmax, nbranchmax
-        #     f.write("%e\t%e\n" % (-l_cm / 2, l_cm / 2))
-        #     f.write("%e\t%e\n" % (-l_cm / 2, l_cm / 2))
-        #     f.write("%e\t%e\n" % (-l_cm / 2, l_cm / 2))
+        sys.stdout.write(CLR_LINE)
+        print("Constructing octree: done\n")
+        
+        # Check octree integrity
+        print("Checking octree integrity...")
+        tree.reset_counter()  # Reset counter for checking
+        check = tree.checkOcTree(tree.root)
+        sys.stdout.write(CLR_LINE)
+        
+        if not check:
+            raise RuntimeError("ERROR: Octree integrity check failed!")
+        
+        print("Octree structure: OK\n")
+        
+        # Write octree to RADMC-3D format
+        print("Converting to RADMC-3D format...")
+        tree.cell_counter = 0  # Reset counter for writing
+        grid = []
+        density = []
+        tree.writeOcTree_radmc(tree.root, grid, density)
+        densityarray = np.array(density)
+        sys.stdout.write(CLR_LINE)
+        print("Converting to RADMC-3D format: done\n")
+        
 
-        #     for i in range(len(grid)):
-        #         f.write("%d\n" % grid[i])
+        print("Writing the amr_grid.inp file for RADMC-3D...\n")
+        # radmc3d.write.amr_grid(radmc_dir, 
+        #                        grid, 
+        #                        max_level,
+        #                        nb_cells, 
+        #                        l_cm, 
+        #                        gridstyle=gridstyle, 
+        #                        coordsystem=coordsystem, 
+        #                        x=None, 
+        #                        y=None, 
+        #                        z=None)
+        # print("Writing amr_grid.inp file: done\n")
 
+        print("Writing the dust_density.inp file for RADMC-3D...\n")
+        radmc3d.write.dust_density(radmc_dir, 
+                                   densityarray, 
+                                   nb_cells,
+                                   nb_species, 
+                                   gridstyle=gridstyle) 
+
+        print("Writing dust_density.inp file: done\n")
+
+        print("  Writing stars.inp\n")
+        radmc3d.write.stars(radmc_dir, 
+                            num_sinks,
+                            sink_masses, 
+                            sink_positions*pc2cm,
+                            sink_radii,
+                            lam,
+                            sink_teff)
+        print("Writing stars.inp file: done\n")
+
+        return grid, densityarray
 
     def to_polaris(self):
         self.rat3 = 1

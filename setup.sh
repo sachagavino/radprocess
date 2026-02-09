@@ -37,11 +37,14 @@ else
 fi
 
 echo
-echo "✅ Setup complete!"
+echo "Setup complete!"
 echo
-echo "You can now:"
+echo "You can now restart (or source) shell and just run:"
+echo "  radprocess"
+echo "That's it!"
+echo
+echo "Alternatively, you can do:"
 echo "  source .venv/bin/activate"
 echo "  radprocess"
 echo
-echo "Or restart shell and just run:"
-echo "  radprocess"
+
