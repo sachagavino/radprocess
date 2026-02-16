@@ -267,7 +267,7 @@ class AmrSource(StrictDataclass):
 
 @dataclass
 class Sim(StrictDataclass):
-    size_hole_au: float = field(default=4., 
+    size_hole_au: float = field(default=0., 
         metadata={'desc': r'[AU] Size of the central hole to exctrude around the sinks.'})
     dtogas: float = field(default=0.01, 
         metadata={'desc': r'Dust-to-gas mass ratio. Used only if this is not multi-grain mode or if no dust ratios exist in RAMSES output.'})
