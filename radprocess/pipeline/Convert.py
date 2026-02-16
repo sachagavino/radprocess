@@ -482,15 +482,13 @@ class Convert:
                     )
                     # If the cell is within the hole radius, set densities to zero.
                     if d2 <= hole_radius2:
-                        print('dstar is smaller than hole_radius_m')
-                        print("pos", c_x, c_y, c_z)
-                        #data['densgas'][i] = 0
-                        for j in range(nb_species): cell_dust_density[i] = 0
+                        print('found dstar is smaller than hole_radius_m')
+                        cell_dust_density[:] = 0
                         break
                         #print("dust mass density used to be", data['densd01'][i])
 
             else:
-                print("No sinks found, no hole carved")
+                print("No sinks found, no hole digged")
 
             # Create cell and insert into tree
             cell = CellOct(c_x, c_y, c_z, 0, level[i])
