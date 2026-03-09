@@ -150,26 +150,33 @@ class OcTree:
                 
         return True
                 
-    def writeOcTree_radmc(self, cell, grid, density): ###possibility to add temp, and others.
-  
+    def writeOcTree_radmc(self, cell, grid, density):
+        if cell is None:
+            # Should not happen, but safety
+            grid.append(0)
+            density.append([0.0] * self._n_species)
+            self.cell_counter += 1
+            return
+
         if cell.isleaf == 1:    
-            data_len = len(cell.data)
-            
             if self.cell_counter % 10000 == 0:
                 sys.stdout.write('-> Writing octree grid file : ' + str(100.0 * self.cell_counter / self.nr_of_cells) + ' %     \r')
                 sys.stdout.flush()
                 
             self.cell_counter += 1
-                
             density.append(cell.data)
-            #density.append(cell.data)
-
-            #temp.append(cell.data[3])
-
             grid.append(0)
 
         else:
-            grid.append(1)
-            
-            for i in range(8):
-                self.writeOcTree_radmc(cell.branches[i], grid, density)
+            if len(cell.branches) == 0:
+                # Empty intermediate node — treat as leaf with zero density
+                if self.cell_counter % 10000 == 0:
+                    sys.stdout.write('-> Writing octree grid file : ' + str(100.0 * self.cell_counter / self.nr_of_cells) + ' %     \r')
+                    sys.stdout.flush()
+                self.cell_counter += 1
+                grid.append(0)
+                density.append([0.0] * self._n_species)
+            else:
+                grid.append(1)
+                for i in range(8):
+                    self.writeOcTree_radmc(cell.branches[i], grid, density)
