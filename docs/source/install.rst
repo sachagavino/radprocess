@@ -27,24 +27,33 @@ To make sure you always use the latest version, you can type::
 Requirements and environment
 =================
 
-Because radprocess (for now) uses specific library versions, it is strongly recommended to use a dedicated virtual environment to avoid conflicts with other packages. You can use ``conda`` to create a virtual environment. 
-The easiest way to do this is to use the provided ``environment.yml`` file. The name of the environment is ``radprocess`` by default, but you can change it in the ``environment.yml`` file before creating the environment.
-From the terminal, type::
+Inside radprocess/ run::
 
-    conda env create -f environment.yml
+    ./setup.sh
 
-Verify that the environment is created properly::
+Follow the information prompted on the terminal. If everything works fine, RadProcess is now installed and ready to be used by typing anywhere in your terminal::
 
-    conda env list
+    radprocess  
 
-If the name of the environment appears in the list, it means the environment has been created successfully. 
+Alternatively, you can do::
 
-You can now activate the new environment with::
+    source .venv/bin/activate
 
-    conda activate radprocess
+And then run::
+
+    radprocess
+
+Because radprocess uses specific softwares (RADMC3D, POLARIS, PYMSES), it is necessary that these softwares are preliminary installed in the user's machine 
+before using RadProcess.
+
 
 
 Running the code
 =================
 
+The code is simply run by typing::
 
+    radprocess
+
+RadProcess is embedded in a Gradio interface, which can be launched by clicking on one of the links that appear. If you run radprocess on a local machine, it is recommanded to
+clic on the local link. If, on the other hand, you use RadProcess from a server, it is required that you use the public link instead. 
