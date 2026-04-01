@@ -1,8 +1,8 @@
 """
 _____________________________________________________________________________________________________________
 file name: Convert
-last update: June 2025
-language: > PYTHON 3.8
+last update: Feb 2026
+language: > PYTHON 3.9
 short description: convert from ramses to radmc3d and polaris. 
 _____________________________________________________________________________________________________________
 """
@@ -394,8 +394,11 @@ class Convert:
         # Handle dust density (single species or multi-species)
         if "dust_massdensities" in root:
             dust_massdensity = np.array(root["dust_massdensities"])  # shape: (nb_cells, nb_species)
-        else: 
+        elif "dust_massdensity" in root: 
             dust_massdensity = np.array(root["dust_massdensity"])[:, np.newaxis]  # shape: (nb_cells, 1)
+
+        if "gas_massdensity" in root:
+            gas_massdensity = np.array(root["gas_massdensity"])[:, np.newaxis]  # shape: (nb_cells, 1)
         
         # Grid bounds (centered at origin)
         x_min = -0.5 * l_m
@@ -425,8 +428,8 @@ class Convert:
         rows      = sinks.rows
         data      = sinks.data
 
-        #TEMPORARY, DEFINE STARS PROPERTIES HERE, will change later.
-        boxlen_pc =  0.765621193260999E-01 #pc
+        #!!!!!!!TEMPORARY, DEFINE STARS PROPERTIES HERE, will change later.
+        boxlen_pc =  0.169154432386102 #pc
         lmin = 1e-3
         lmax = 1e4
         nlam = 210
@@ -452,8 +455,13 @@ class Convert:
             lint            = sinks.data[:, intlum_idx]*L_sun
             lacc            = sinks.data[:, acclum_idx]*L_sun
             ltot            = lint+lacc
-            sink_radii      = f_acc * Ggram * sink_masses*acc_rate/lacc
-            sink_teff       = (ltot/(4*np.pi*sigma*sink_radii**2))**(1/4)
+            if lacc > 0:
+                sink_radii      = f_acc * Ggram * sink_masses*acc_rate/lacc
+                sink_teff       = (ltot/(4*np.pi*sigma*sink_radii**2))**(1/4)
+            else:
+                print('WARNING: the accretion luminosity is 0. Will proceed with default values to compute the stellar radii')
+                sink_radii      = np.zeros((sinks.num_sinks))
+                sink_teff       = 5e3*np.ones((sinks.num_sinks))
 
             #sink_positions = sink_positions - boxlen_pc / 2.0
 
@@ -470,7 +478,7 @@ class Convert:
             c_z = z[i] - 0.5 * l_m
             
             # Get dust density for this cell
-            cell_dust_density = dust_massdensity[i, :].copy()
+            cell_dust_density = dust_massdensity[i, :].copy() #dust_massdensity[i, :].copy()
 
             if sinks.num_sinks > 0:
                 for star_pos in sink_positions:
@@ -521,6 +529,8 @@ class Convert:
         tree.cell_counter = 0  # Reset counter for writing
         grid = []
         density = []
+        tree._n_species = nb_species
+        print('write OcTree call: ')
         tree.writeOcTree_radmc(tree.root, grid, density)
         densityarray = np.array(density)
         sys.stdout.write(CLR_LINE)
@@ -528,17 +538,17 @@ class Convert:
         
 
         print("Writing the amr_grid.inp file for RADMC-3D...\n")
-        # radmc3d.write.amr_grid(radmc_dir, 
-        #                        grid, 
-        #                        max_level,
-        #                        nb_cells, 
-        #                        l_cm, 
-        #                        gridstyle=gridstyle, 
-        #                        coordsystem=coordsystem, 
-        #                        x=None, 
-        #                        y=None, 
-        #                        z=None)
-        # print("Writing amr_grid.inp file: done\n")
+        radmc3d.write.amr_grid(radmc_dir, 
+                               grid, 
+                               max_level,
+                               nb_cells, 
+                               l_cm, 
+                               gridstyle=gridstyle, 
+                               coordsystem=coordsystem, 
+                               x=None, 
+                               y=None, 
+                               z=None)
+        print("Writing amr_grid.inp file: done\n")
 
         print("Writing the dust_density.inp file for RADMC-3D...\n")
         radmc3d.write.dust_density(radmc_dir, 

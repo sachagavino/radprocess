@@ -330,7 +330,6 @@ def dust_density(radpath,
 
     elif (gridstyle == "octtree"):
 
-        #f = open("thermal/dust_density.inp","w")
         with open(filepath, "w") as f:
             f.write("1\n")
             f.write("{0:d}\n".format(nb_cells))

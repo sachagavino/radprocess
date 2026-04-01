@@ -147,7 +147,7 @@ def start_pipeline_display(ramses_dir, cfg, pipe):
 # -----------------------------
 # Gradio Layout
 # -----------------------------
-def launch_interface():
+def launch_interface(share=True, server_name="127.0.0.1", server_port=7860):
     # 1. Define all components first
     status_box = gr.Textbox(...)
     hydro_html = gr.HTML(value="")
@@ -556,7 +556,7 @@ def launch_interface():
                                 with gr.Row():
 
                                     # ===== LEFT COLUMN =====
-                                    with gr.Column(scale=1.5):
+                                    with gr.Column(scale=2):
 
                                         gr.Markdown("### Build the pipeline by selecting actions below.")
 
@@ -601,7 +601,7 @@ def launch_interface():
                                         add_step_button = gr.Button("➕ Add action", variant="huggingface")
 
                                     # ===== RIGHT COLUMN =====
-                                    with gr.Column(scale=1.5):
+                                    with gr.Column(scale=2):
                                         convert_log = gr.Textbox(
                                             label="Live Conversion Log",
                                             value="Logs will appear here...",
@@ -859,7 +859,7 @@ def launch_interface():
 
  
                             with gr.Tab("RADMC3D"):
-                                print("radmc3d grid")
+                                pass
 
                             
 
@@ -954,7 +954,14 @@ def launch_interface():
             outputs=[x_dropdown, y_dropdown]
         )
 
-    demo.launch(theme=gr.themes.Citrus(), share=True)
+    #demo.launch(theme=gr.themes.Citrus(), share=True)
+
+    demo.launch(
+    theme=gr.themes.Citrus(),
+    share=share,
+    server_name=server_name,
+    server_port=server_port
+    )
     return demo
 
 
