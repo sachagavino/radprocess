@@ -18,6 +18,10 @@ VERSION = "0.1.0"
 DOC_URL = "https://radprocess.readthedocs.io/en/latest/"
 
 
+def is_ssh_session():
+    import os
+    return "SSH_CONNECTION" in os.environ or "SSH_CLIENT" in os.environ
+
 def print_banner():
 
     title = Text("RadProcess", style="bold orange1")
@@ -118,36 +122,35 @@ def main():
         sys.exit(1)
 
     print_banner()
-
     print_status_table()
-
     console.print()
 
     port = 7860
 
-    try:
-
-        with console.status(
-            "[bold green]Launching RadProcess interface...[/bold green]",
-            spinner="dots",
-        ):
-            launch_interface(share=True)
-
-    except Exception:
+    # Detect if running on a remote server
+    if is_ssh_session():
 
         console.print(
-            "\n[yellow]Could not create Gradio share link. "
-            "Falling back to local server.[/yellow]\n"
+            "[yellow]Detected SSH session → disabling Gradio share link.[/yellow]\n"
         )
 
         print_ssh_panel(port)
 
         with console.status(
-            "[bold green]Starting local RadProcess server...[/bold green]",
+            "[bold green]Starting RadProcess server...[/bold green]",
             spinner="dots",
         ):
             launch_interface(
-                share=False,
+                share=True,
                 server_name="0.0.0.0",
                 server_port=port,
             )
+
+    else:
+        # Local machine → try share
+        with console.status(
+            "[bold green]Launching RadProcess interface...[/bold green]",
+            spinner="dots",
+        ):
+            launch_interface(share=True)
+    
