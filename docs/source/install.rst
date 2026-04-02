@@ -1,59 +1,75 @@
 Installation of radprocess
-************
+**************************
 
 How to obtain radprocess
-=================
+========================
 
-radprocess can be obtained by cloning its repository (soon using pip). This is also the best way to keep up-to-date.
-From a terminal, go to a directory where you want to install the code, and type:: 
+The radprocess package can be obtained by cloning its GitHub repository
+(pip installation will be available in the future). Cloning the repository
+is currently the recommended method, as it allows you to easily keep your
+installation up to date.
 
+From a terminal, navigate to the directory where you wish to install the code
+and run::
 
     git clone https://github.com/sachagavino/radprocess.git
 
-
-This will create a folder ``radprocess/``, which contains the full git repository. You can now access the package::
-
+This will create a folder named ``radprocess/`` containing the full repository.
+You can then move into the directory::
 
     cd radprocess/
 
-
-To make sure you always use the latest version, you can type:: 
-
+To update your local copy to the latest version, simply run::
 
     git pull
 
 
-
 Requirements and environment
-=================
+============================
 
-Inside radprocess/ run::
+From within the ``radprocess/`` directory, run::
 
     ./setup.sh
 
-Follow the information prompted on the terminal. If everything works fine, RadProcess is now installed and ready to be used by typing anywhere in your terminal::
+Follow the instructions displayed in the terminal. If the setup completes
+successfully, RadProcess will be installed and ready to use.
 
-    radprocess  
+You can then launch the code from anywhere in your terminal with::
 
-Alternatively, you can do::
+    radprocess
+
+Alternatively, you may activate the virtual environment manually::
 
     source .venv/bin/activate
 
-And then run::
+and then run::
 
     radprocess
 
-Because radprocess uses specific softwares (RADMC3D, POLARIS, PYMSES), it is necessary that these softwares are preliminary installed in the user's machine 
-before using RadProcess.
-
+RadProcess relies on several external software packages, including
+RADMC-3D, POLARIS, and PyMSES. These must be installed and properly
+configured on your system prior to using RadProcess. 
 
 
 Running the code
-=================
+================
 
-The code is simply run by typing::
+RadProcess is launched simply by typing::
 
     radprocess
 
-RadProcess is embedded in a Gradio interface, which can be launched by clicking on one of the links that appear. If you run radprocess on a local machine, it is recommanded to
-clic on the local link. If, on the other hand, you use RadProcess from a server, it is required that you use the public link instead. 
+This will start a Gradio-based graphical interface. One or more URLs will be
+displayed in the terminal.
+
+- On a local machine, it is recommended to open the **local URL**.
+- When running on a remote server, you should use the **public (share) URL**
+  if available. If the share link is not available (e.g., due to network
+  restrictions), you can access the interface via SSH tunneling.
+
+In that case, run the following command from your local machine::
+
+    ssh -L 7860:localhost:7860 user@server
+
+and then open the following address in your browser::
+
+    http://localhost:7860
