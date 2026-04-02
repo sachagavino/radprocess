@@ -47,7 +47,7 @@ and then run::
     radprocess
 
 RadProcess relies on several external software packages, including
-RADMC-3D, POLARIS, and PyMSES. These must be installed and properly
+RADMC-3D, POLARIS, and PyMSES (Python>=3). These must be installed and properly
 configured on your system prior to using RadProcess. 
 
 
