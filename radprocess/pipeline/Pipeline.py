@@ -470,15 +470,15 @@ class Pipeline:
     def run_polaris_opacity(
         self,
         dust_components,
-        dust_size_min,
-        dust_size_max,
-        dust_size_powerlaw=-3.5,
-        mean_molecular_weight=2.37,
-        mass_fraction=0.01,
-        nr_threads=8,
+        dust_size_min=None,
+        dust_size_max=None,
+        dust_size_powerlaw=None,
+        mean_molecular_weight=None,
+        mass_fraction=None,
+        nr_threads=None,
         grid_path=None,
         n_dust_override=None,
-        polaris_binary="polaris",
+        polaris_binary=None,
         cleanup=True,
     ):
         """
@@ -486,6 +486,10 @@ class Pipeline:
 
         This is Step 4 of the pipeline. It requires that a POLARIS grid
         file already exists (from convert_to_polaris, Step 2).
+
+        Parameters default to values in configparams.polaris when not
+        explicitly provided. dust_components must always be provided
+        explicitly since it contains file paths specific to the user's setup.
 
         Parameters
         ----------
@@ -496,24 +500,23 @@ class Pipeline:
             Example:
                 [{"path": "/path/silicate.cs", "weight": 0.625},
                  {"path": "/path/carbon.cs",   "weight": 0.375}]
-        dust_size_min : float
+        dust_size_min : float or None
             Minimum grain radius in metres.
-        dust_size_max : float
+        dust_size_max : float or None
             Maximum grain radius in metres.
-        dust_size_powerlaw : float
+        dust_size_powerlaw : float or None
             Power-law exponent (default -3.5 for MRN).
-        mean_molecular_weight : float
-            Gas mean molecular weight (default 2.37).
-        mass_fraction : float
-            Dust-to-gas mass fraction (default 0.01).
-        nr_threads : int
+        mean_molecular_weight : float or None
+            Gas mean molecular weight.
+        mass_fraction : float or None
+            Dust-to-gas mass fraction.
+        nr_threads : int or None
             Number of OpenMP threads.
         grid_path : str or Path or None
-            Path to the POLARIS grid file. If None, auto-detected from
-            the polaris output directory.
+            Path to the POLARIS grid file. If None, auto-detected.
         n_dust_override : int or None
-            Override the number of dust species (otherwise read from RAMSES info).
-        polaris_binary : str
+            Override the number of dust species.
+        polaris_binary : str or None
             Name or path of the POLARIS executable.
         cleanup : bool
             If True, remove previous POLARIS run outputs before starting.
@@ -528,6 +531,23 @@ class Pipeline:
         ramses_dir = self.configparams.ramsesoutput.ramses_output_dir
         polaris_dir = self.polaris_outputs_dir
         f_acc = self.configparams.sim.facc
+        pc = self.configparams.polaris
+
+        # Use dataclass defaults for any parameter not explicitly set
+        if dust_size_min is None:
+            dust_size_min = pc.dust_size_min
+        if dust_size_max is None:
+            dust_size_max = pc.dust_size_max
+        if dust_size_powerlaw is None:
+            dust_size_powerlaw = pc.dust_size_powerlaw
+        if mean_molecular_weight is None:
+            mean_molecular_weight = pc.mean_molecular_weight
+        if mass_fraction is None:
+            mass_fraction = pc.mass_fraction
+        if nr_threads is None:
+            nr_threads = pc.nr_threads
+        if polaris_binary is None:
+            polaris_binary = pc.polaris_binary
 
         # Auto-detect grid file if not provided
         if grid_path is None:
@@ -558,3 +578,301 @@ class Pipeline:
         )
 
         return data_dir
+
+    def prepare_radmc3d_inputs(
+        self,
+        polaris_data_dir=None,
+        n_dust=None,
+        wave_min=None,
+        wave_max=None,
+        n_wavelengths=None,
+        nphot=None,
+        setthreads=None,
+        scattering_mode=None,
+        polaris_skiprows=29,
+    ):
+        """
+        Convert POLARIS opacities to RADMC-3D format and write all
+        remaining RADMC-3D input files (Step 5).
+
+        Requires that Steps 3 (RADMC-3D grid) and 4 (POLARIS opacity run)
+        have already been completed.
+
+        Parameters default to values in configparams.radmc3d when not
+        explicitly provided.
+
+        Parameters
+        ----------
+        polaris_data_dir : str or Path or None
+            Path to the POLARIS data/ directory. If None, auto-detected
+            from {polaris_outputs_dir}/data/.
+        n_dust : int or None
+            Number of dust species. If None, auto-detected from POLARIS output.
+        wave_min, wave_max : float or None
+            Wavelength range in microns.
+        n_wavelengths : int or None
+            Number of wavelength points.
+        nphot : int or None
+            Number of photon packages for mctherm.
+        setthreads : int or None
+            Number of OpenMP threads.
+        scattering_mode : int or None
+            Scattering mode (1 = isotropic).
+        polaris_skiprows : int
+            Header rows to skip in POLARIS opacity files.
+
+        Returns
+        -------
+        radmc_dir : Path
+            The RADMC-3D directory containing all input files.
+        """
+        from radprocess.radmc3d.prepare import prepare_radmc3d_inputs
+
+        ramses_dir = self.configparams.ramsesoutput.ramses_output_dir
+        radmc_dir = self.radmc_outputs_dir
+        f_acc = self.configparams.sim.facc
+        rc = self.configparams.radmc3d
+
+        # Use dataclass defaults for any parameter not explicitly set
+        if wave_min is None:
+            wave_min = rc.wave_min
+        if wave_max is None:
+            wave_max = rc.wave_max
+        if n_wavelengths is None:
+            n_wavelengths = rc.n_wavelengths
+        if nphot is None:
+            nphot = rc.nphot
+        if setthreads is None:
+            setthreads = rc.setthreads
+        if scattering_mode is None:
+            scattering_mode = rc.scattering_mode
+
+        if polaris_data_dir is None:
+            polaris_data_dir = self.polaris_outputs_dir / "data"
+            if not polaris_data_dir.exists():
+                raise FileNotFoundError(
+                    f"POLARIS data directory not found: {polaris_data_dir}. "
+                    "Run run_polaris_opacity() first (Step 4)."
+                )
+
+        return prepare_radmc3d_inputs(
+            ramses_dir=ramses_dir,
+            radmc_dir=radmc_dir,
+            polaris_data_dir=polaris_data_dir,
+            n_dust=n_dust,
+            f_acc=f_acc,
+            wave_min=wave_min,
+            wave_max=wave_max,
+            n_wavelengths=n_wavelengths,
+            nphot=nphot,
+            setthreads=setthreads,
+            scattering_mode=scattering_mode,
+            polaris_skiprows=polaris_skiprows,
+        )
+
+    def run_radmc3d_mctherm(self, radmc3d_binary="radmc3d"):
+        """
+        Execute ``radmc3d mctherm`` to compute the dust temperature (Step 6).
+
+        All input files must already exist in the RADMC-3D output directory
+        (from Steps 3 and 5).
+
+        Parameters
+        ----------
+        radmc3d_binary : str
+            Name or path of the RADMC-3D executable.
+
+        Returns
+        -------
+        temp_file : Path
+            Path to the dust_temperature.bdat output file.
+        """
+        from radprocess.radmc3d.run import mctherm
+
+        radmc_dir = self.radmc_outputs_dir
+
+        # Infer output number for the log filename
+        root = self.get_amr_root()
+        output_num = int(root.attrs.get("ramses_output_num", 0))
+        log_path = radmc_dir / f"radmc3d_mctherm_{output_num:05d}.log"
+
+        temp_file = mctherm(
+            radmc_dir=radmc_dir,
+            log_path=log_path,
+            radmc3d_binary=radmc3d_binary,
+        )
+
+        return temp_file
+
+    def merge_temperature(self, n_dust=None):
+        """
+        Merge RADMC-3D dust temperatures into the POLARIS grid (Step 7).
+
+        Reads the POLARIS grid_temp.dat (from Step 4) and the RADMC-3D
+        dust_temperature.bdat (from Step 6), replaces the POLARIS dust
+        temperatures with the RADMC-3D values, and writes the result as
+        grid_temp.radmc3d.dat in the POLARIS output directory.
+
+        Parameters
+        ----------
+        n_dust : int or None
+            Number of dust species. If None, auto-detected from the
+            RAMSES info file.
+
+        Returns
+        -------
+        merged_grid : Path
+            Path to the merged grid file (grid_temp.radmc3d.dat).
+        """
+        from radprocess.polaris.merge import merge_radmc3d_temperature
+
+        ramses_dir = self.configparams.ramsesoutput.ramses_output_dir
+        polaris_dir = self.polaris_outputs_dir
+        radmc_dir = self.radmc_outputs_dir
+
+        return merge_radmc3d_temperature(
+            polaris_dir=polaris_dir,
+            radmc_dir=radmc_dir,
+            n_dust=n_dust,
+            ramses_dir=ramses_dir,
+        )
+
+    def render_images(
+        self,
+        dust_components,
+        npix,
+        distance_pc,
+        wavelengths_mm,
+        views=None,
+        midplane_zoom=1,
+        fov_m=None,
+        label="whole",
+        grid_path=None,
+        n_dust=None,
+        nr_threads=None,
+        dust_size_min=None,
+        dust_size_max=None,
+        dust_size_powerlaw=None,
+        mean_molecular_weight=None,
+        mass_fraction=None,
+        polaris_binary=None,
+        cleanup_views=True,
+    ):
+        """
+        Run POLARIS CMD_DUST_EMISSION to produce synthetic images (Step 8).
+
+        Renders images at the specified wavelengths and viewing angles
+        using the merged POLARIS grid (from Step 7).
+
+        Parameters
+        ----------
+        dust_components : list of dict
+            Dust material definitions (same as for the opacity run).
+        npix : int
+            Image resolution (npix x npix pixels).
+        distance_pc : float
+            Source distance in parsecs.
+        wavelengths_mm : list of float
+            Wavelengths to image in millimetres.
+        views : list of str or None
+            Viewing angles to render (e.g. ["xy", "xz", "yz"]).
+            If None, renders all three standard views.
+        midplane_zoom : int or float
+            Midplane zoom factor (1 = full box, 10 = zoomed inner).
+        fov_m : float or None
+            Field of view in metres (half-width). If None, POLARIS uses
+            the full grid extent. Set this for zoomed/inner imaging.
+        label : str
+            Output subdirectory label ("whole" or "inner").
+        grid_path : str or Path or None
+            Path to the merged grid. If None, auto-detected as
+            grid_temp.radmc3d.dat in the POLARIS output directory.
+        n_dust : int or None
+            Number of dust species. If None, auto-detected from RAMSES info.
+        nr_threads : int or None
+            OpenMP threads (defaults to configparams.polaris.nr_threads).
+        dust_size_min, dust_size_max : float or None
+            Grain size range in metres.
+        dust_size_powerlaw : float or None
+            Size distribution exponent.
+        mean_molecular_weight : float or None
+            Gas mu.
+        mass_fraction : float or None
+            Dust-to-gas mass fraction.
+        polaris_binary : str or None
+            POLARIS executable name or path.
+        cleanup_views : bool
+            Remove previous image outputs before rendering.
+
+        Returns
+        -------
+        image_dirs : dict
+            {view_name: Path} for each rendered view.
+        """
+        from radprocess.polaris.imaging import render_images
+        from radprocess.polaris.opacity import _find_info_file, _read_ndust
+
+        polaris_dir = self.polaris_outputs_dir
+        image_output_dir = Path(self.configparams.pipoutput.main_output_dir) / "images"
+        pc = self.configparams.polaris
+
+        # Defaults from config dataclass
+        if dust_size_min is None:
+            dust_size_min = pc.dust_size_min
+        if dust_size_max is None:
+            dust_size_max = pc.dust_size_max
+        if dust_size_powerlaw is None:
+            dust_size_powerlaw = pc.dust_size_powerlaw
+        if mean_molecular_weight is None:
+            mean_molecular_weight = pc.mean_molecular_weight
+        if mass_fraction is None:
+            mass_fraction = pc.mass_fraction
+        if nr_threads is None:
+            nr_threads = pc.nr_threads
+        if polaris_binary is None:
+            polaris_binary = pc.polaris_binary
+
+        # Auto-detect grid
+        if grid_path is None:
+            grid_path = polaris_dir / "grid_temp.radmc3d.dat"
+            if not grid_path.exists():
+                raise FileNotFoundError(
+                    f"Merged grid not found: {grid_path}. "
+                    "Run merge_temperature() first (Step 7)."
+                )
+
+        # Auto-detect n_dust
+        if n_dust is None:
+            ramses_dir = self.configparams.ramsesoutput.ramses_output_dir
+            info_path = _find_info_file(ramses_dir)
+            n_dust = _read_ndust(info_path)
+            if n_dust == 0:
+                n_dust = 1
+
+        # Get output number for naming
+        root = self.get_amr_root()
+        output_num = int(root.attrs.get("ramses_output_num", 0))
+
+        return render_images(
+            polaris_dir=polaris_dir,
+            image_output_dir=image_output_dir,
+            grid_path=grid_path,
+            dust_components=dust_components,
+            n_dust=n_dust,
+            dust_size_min=dust_size_min,
+            dust_size_max=dust_size_max,
+            dust_size_powerlaw=dust_size_powerlaw,
+            mean_molecular_weight=mean_molecular_weight,
+            mass_fraction=mass_fraction,
+            npix=npix,
+            distance_pc=distance_pc,
+            wavelengths_mm=wavelengths_mm,
+            views=views,
+            nr_threads=nr_threads,
+            midplane_zoom=midplane_zoom,
+            fov_m=fov_m,
+            output_num=output_num,
+            polaris_binary=polaris_binary,
+            label=label,
+            cleanup_views=cleanup_views,
+        )

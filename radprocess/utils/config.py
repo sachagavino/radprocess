@@ -289,6 +289,62 @@ class Sim(StrictDataclass):
         return _html_repr(self)
     
 
+@dataclass
+class Radmc3dConfig(StrictDataclass):
+    nphot: int = field(default=1_000_000,
+        metadata={'desc': r'Number of photon packages for mctherm.'})
+    nphot_scat: int = field(default=1_000_000,
+        metadata={'desc': r'Number of photon packages for scattering Monte Carlo.'})
+    setthreads: int = field(default=8,
+        metadata={'desc': r'Number of OpenMP threads for RADMC-3D.'})
+    scattering_mode: int = field(default=1,
+        metadata={'desc': r'Scattering mode (1=isotropic, 2=anisotropic with HG, 5=full).'})
+    scattering_mode_max: int = field(default=1,
+        metadata={'desc': r'Maximum scattering mode.'})
+    modified_random_walk: int = field(default=1,
+        metadata={'desc': r'Enable modified random walk (1=yes, 0=no). Accelerates optically thick regions.'})
+    rto_style: int = field(default=3,
+        metadata={'desc': r'Output style for dust_temperature (1=ascii, 3=binary).'})
+    rto_single: int = field(default=1,
+        metadata={'desc': r'Single precision output (1=yes, 0=no).'})
+    wave_min: float = field(default=0.27,
+        metadata={'desc': r'[micron] Minimum wavelength for the wavelength grid.'})
+    wave_max: float = field(default=3000.0,
+        metadata={'desc': r'[micron] Maximum wavelength for the wavelength grid.'})
+    n_wavelengths: int = field(default=200,
+        metadata={'desc': r'Number of log-spaced wavelength points.'})
+
+    def __repr__(self):
+        return fancy_repr(self)
+
+    def _repr_html_(self):
+        return _html_repr(self)
+
+
+@dataclass
+class PolarisConfig(StrictDataclass):
+    dust_size_min: float = field(default=5e-9,
+        metadata={'desc': r'[m] Minimum grain radius.'})
+    dust_size_max: float = field(default=2.5e-7,
+        metadata={'desc': r'[m] Maximum grain radius.'})
+    dust_size_powerlaw: float = field(default=-3.5,
+        metadata={'desc': r'Power-law exponent for the grain size distribution (e.g. -3.5 for MRN).'})
+    mean_molecular_weight: float = field(default=2.37,
+        metadata={'desc': r'Mean molecular weight (mu) of the gas.'})
+    mass_fraction: float = field(default=0.01,
+        metadata={'desc': r'Dust-to-gas mass fraction.'})
+    nr_threads: int = field(default=8,
+        metadata={'desc': r'Number of OpenMP threads for POLARIS.'})
+    polaris_binary: str = field(default='polaris',
+        metadata={'desc': r'Name or path of the POLARIS executable.'})
+
+    def __repr__(self):
+        return fancy_repr(self)
+
+    def _repr_html_(self):
+        return _html_repr(self)
+
+
 # ---------------- Structure Params ----------------
 @dataclass
 class ConfigParams(StrictDataclass):
@@ -296,6 +352,8 @@ class ConfigParams(StrictDataclass):
     pipoutput: PipelineOutput= field(default_factory=PipelineOutput)
     amrsource: AmrSource = field(default_factory=AmrSource)
     sim: Sim = field(default_factory=Sim)
+    radmc3d: Radmc3dConfig = field(default_factory=Radmc3dConfig)
+    polaris: PolarisConfig = field(default_factory=PolarisConfig)
     nb_dust: int = 0
 
     def __repr__(self):
