@@ -175,8 +175,8 @@ def launch_interface(share=True, server_name="127.0.0.1", server_port=7860):
             z-index:100;
         ">
             <div style="font-size:32px; font-weight:800; display:flex; align-items:center; gap:5px;">
-                <span style="display:flex; align-items:center; transform: translateY(7px);">astroMUGS</span>
-                <img src="data:image/png;base64,{logo4_b64}" style="height:70px; display:block; transform: translateY(-10px);">
+                <span style="display:flex; align-items:center; transform: translateY(7px);">RadProcess</span>
+                
             </div>
             
             <div style="display:flex; gap:20px; align-items:center;">
@@ -187,7 +187,7 @@ def launch_interface(share=True, server_name="127.0.0.1", server_port=7860):
         </div>
         """)
 
-
+        #<img src="data:image/png;base64,{logo4_b64}" style="height:70px; display:block; transform: translateY(-10px);">
         # # ---------- RAMSES Section ----------
         # gr.Markdown("""
         # # **RAMSES Section**
@@ -541,6 +541,7 @@ def launch_interface(share=True, server_name="127.0.0.1", server_port=7860):
                                 BUTTON_VISIBILITY = {
                                     "Create RAMSES grid": True,
                                     "Convert to RADMC3D": False,
+                                    "Convert subboxes to RADMC3D": False,
                                     "Convert to POLARIS": False,
                                     "merge opacities (POLARIS to RADMC3D)": False,
                                     "Run MCTHERM (RADMC3D)": False,
@@ -609,6 +610,42 @@ def launch_interface(share=True, server_name="127.0.0.1", server_port=7860):
                                             interactive=False
                                         )
 
+                                    # --- Subbox parameters panel ---
+                                    with gr.Group(visible=False) as subbox_params_group:
+                                        gr.Markdown("#### Subbox extraction parameters")
+                                        with gr.Row():
+                                            subbox_halfwidth_input = gr.Number(
+                                                label="Box half-width (AU)",
+                                                value=100.0,
+                                                precision=1,
+                                                interactive=True,
+                                            )
+                                            subbox_isolation_input = gr.Number(
+                                                label="Isolation radius (AU)",
+                                                value=100.0,
+                                                precision=1,
+                                                interactive=True,
+                                            )
+                                        with gr.Row():
+                                            subbox_hole_input = gr.Number(
+                                                label="Hole radius (AU)",
+                                                value=4.0,
+                                                precision=1,
+                                                interactive=True,
+                                            )
+                                            subbox_boxlen_input = gr.Number(
+                                                label="Boxlen (pc)",
+                                                value=0.169154432386102,
+                                                precision=12,
+                                                interactive=True,
+                                            )
+                                        subbox_require_lum = gr.Checkbox(
+                                            label="Require luminosity data",
+                                            value=True,
+                                            interactive=True,
+                                        )
+
+
 
                                 # === increment step count ===
                                 def add_step(n):
@@ -636,52 +673,72 @@ def launch_interface(share=True, server_name="127.0.0.1", server_port=7860):
 
                                 # === toggle button per dropdown (lambda binding FIXED) ===
                                 def update_action_button(action):
-                                    if action == "Create RAMSES grid":
-                                        return gr.update(visible=True, value="Create RAMSES grid")
-                                    elif action == "Convert to RADMC3D":
-                                        return gr.update(visible=True, value="Convert to RADMC3D")
+                                    # Base: button update
+                                    if action in ("Create RAMSES grid",
+                                                   "Convert to RADMC3D",
+                                                   "Convert subboxes to RADMC3D"):
+                                        btn_update = gr.update(visible=True, value=action)
                                     else:
-                                        return gr.update(visible=False)
+                                        btn_update = gr.update(visible=False)
+ 
+                                    # Subbox panel: visible only for that action
+                                    if action == "Convert subboxes to RADMC3D":
+                                        panel_update = gr.update(visible=True)
+                                    else:
+                                        panel_update = gr.update(visible=False)
+ 
+                                    return btn_update, panel_update
 
                             for dd, btn in zip(dropdowns, buttons):
-
+ 
                                 dd.change(
                                     fn=update_action_button,
                                     inputs=[dd],
-                                    outputs=[btn],
+                                    outputs=[btn, subbox_params_group],   # <-- added
                                 )
 
+ 
                                 def make_dispatch():
-
-                                    def dispatch(action, cfg, pipe):
+ 
+                                    def dispatch(action, cfg, pipe,
+                                                 sb_hw, sb_iso, sb_hole, sb_boxlen, sb_lum):
                                         buffer = io.StringIO()
                                         old_stdout = sys.stdout
                                         sys.stdout = buffer
-
+ 
                                         done = False
                                         error = None
-
+ 
                                         full_log = ""
-
+ 
                                         def run_job():
                                             nonlocal done, error
                                             try:
                                                 pipe.configparams = cfg
-
+ 
                                                 if action == "Create RAMSES grid":
                                                     pipe.load_ramses()
-
+ 
                                                 elif action == "Convert to RADMC3D":
                                                     pipe.convert_to_radmc()
-
+ 
+                                                elif action == "Convert subboxes to RADMC3D":
+                                                    pipe.convert_subboxes(
+                                                        box_half_width_au=float(sb_hw),
+                                                        isolation_radius_au=float(sb_iso),
+                                                        hole_au=float(sb_hole),
+                                                        boxlen_pc=float(sb_boxlen) if sb_boxlen else None,
+                                                        require_luminosity=bool(sb_lum),
+                                                    )
+ 
                                                 else:
                                                     raise RuntimeError("Unknown action.")
-
+ 
                                             except Exception as e:
                                                 error = e
                                             finally:
                                                 done = True
-
+ 
                                         try:
                                             if action == "Create RAMSES grid":
                                                 full_log += "Starting RAMSES → AMR grid conversion...\n"
@@ -689,10 +746,19 @@ def launch_interface(share=True, server_name="127.0.0.1", server_port=7860):
                                             elif action == "Convert to RADMC3D":
                                                 full_log += "Starting AMR → RADMC3D conversion...\n"
                                                 yield full_log
-
+                                            elif action == "Convert subboxes to RADMC3D":
+                                                full_log += (
+                                                    f"Starting subbox extraction...\n"
+                                                    f"  Box half-width: {sb_hw} AU\n"
+                                                    f"  Isolation radius: {sb_iso} AU\n"
+                                                    f"  Hole radius: {sb_hole} AU\n"
+                                                    f"  Require luminosity: {sb_lum}\n"
+                                                )
+                                                yield full_log
+ 
                                             t = threading.Thread(target=run_job)
                                             t.start()
-
+ 
                                             while not done:
                                                 time.sleep(0.2)
                                                 txt = buffer.getvalue()
@@ -701,12 +767,12 @@ def launch_interface(share=True, server_name="127.0.0.1", server_port=7860):
                                                     yield full_log
                                                     buffer.truncate(0)
                                                     buffer.seek(0)
-
+ 
                                             txt = buffer.getvalue()
                                             if txt:
                                                 full_log += txt
                                                 yield full_log
-
+ 
                                             if error is not None:
                                                 full_log += f"❌ Failed: {error}\n"
                                                 yield full_log
@@ -717,16 +783,38 @@ def launch_interface(share=True, server_name="127.0.0.1", server_port=7860):
                                                 elif action == "Convert to RADMC3D":
                                                     full_log += "✔ RADMC3D conversion finished.\n"
                                                     yield full_log
-
+                                                elif action == "Convert subboxes to RADMC3D":
+                                                    full_log += "✔ Subbox extraction finished.\n"
+                                                    yield full_log
+ 
                                         finally:
                                             sys.stdout = old_stdout
-
+ 
                                     return dispatch
+ 
+                                # THIS is an important part
+                                btn.click(
+                                    fn=make_dispatch(),
+                                    inputs=[
+                                        dd, cfg_state, pipe_state,
+                                        subbox_halfwidth_input,
+                                        subbox_isolation_input,
+                                        subbox_hole_input,
+                                        subbox_boxlen_input,
+                                        subbox_require_lum,
+                                    ],
+                                    outputs=convert_log,
+                                )
 
                                 # THIS is an important part
                                 btn.click(
                                     fn=make_dispatch(),
-                                    inputs=[dd, cfg_state, pipe_state],
+                                    inputs=[dd, cfg_state, pipe_state,
+                                            subbox_halfwidth_input,
+                                            subbox_isolation_input,
+                                            subbox_hole_input,
+                                            subbox_boxlen_input,
+                                            subbox_require_lum],
                                     outputs=convert_log,
                                 )
 

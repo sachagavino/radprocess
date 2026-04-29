@@ -8,9 +8,12 @@ import zarr
 
 from radprocess.pipeline.Grid import Grid
 from radprocess.pipeline.Convert import Convert
+from radprocess.pipeline.Subbox import convert_subboxes_to_radmc
 from radprocess import radmc3d
 from radprocess import ramses
 from radprocess.utils.config import ConfigParams
+
+from radprocess.constants.constants import pc2m
 
 class Pipeline:
 
@@ -431,6 +434,23 @@ class Pipeline:
         self.grid.add_radmc_grid(radmc_grid)
         # nb_sizes = self.configparams.nb_dust
         # sim_param = self.configparams.sim
+
+    def convert_subboxes(self, box_half_width_au=100.0, isolation_radius_au=100.0,
+                        hole_au=None, boxlen_pc=None, require_luminosity=True):
+        if hole_au is None:
+            hole_au = self.configparams.sim.size_hole_au
+        if boxlen_pc is None:
+            root = self.get_amr_root()
+            boxlen_pc = root.attrs.get("l_m") / pc2m
+
+        return convert_subboxes_to_radmc(
+            self,
+            box_half_width_au=box_half_width_au,
+            isolation_radius_au=isolation_radius_au,
+            hole_au=hole_au,
+            boxlen_pc=boxlen_pc,
+            require_luminosity=require_luminosity,
+        )
 
 
 
