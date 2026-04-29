@@ -1,4 +1,5 @@
 import sys
+import struct
 
 class CellOct:
     """written by Stefan Reiss"""

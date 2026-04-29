@@ -8,12 +8,9 @@ import zarr
 
 from radprocess.pipeline.Grid import Grid
 from radprocess.pipeline.Convert import Convert
-from radprocess.pipeline.Subbox import convert_subboxes_to_radmc
 from radprocess import radmc3d
 from radprocess import ramses
 from radprocess.utils.config import ConfigParams
-
-from radprocess.constants.constants import pc2m
 
 class Pipeline:
 
@@ -435,23 +432,129 @@ class Pipeline:
         # nb_sizes = self.configparams.nb_dust
         # sim_param = self.configparams.sim
 
-    def convert_subboxes(self, box_half_width_au=100.0, isolation_radius_au=100.0,
-                        hole_au=None, boxlen_pc=None, require_luminosity=True):
+    def convert_to_polaris(self, hole_au=None):
+        """
+        Convert the RAMSES Zarr grid to a POLARIS binary octree grid.
+
+        Parameters
+        ----------
+        hole_au : float or None
+            Hole radius around sinks (AU). If None, uses configparams.sim.size_hole_au.
+
+        Returns
+        -------
+        output_file : Path
+            Path to the written POLARIS binary grid file.
+        """
+        ramses_dir = self.configparams.ramsesoutput.ramses_output_dir
+        polaris_dir = self.polaris_outputs_dir
         if hole_au is None:
             hole_au = self.configparams.sim.size_hole_au
-        if boxlen_pc is None:
-            root = self.get_amr_root()
-            boxlen_pc = root.attrs.get("l_m") / pc2m
+        f_acc = self.configparams.sim.facc
 
-        return convert_subboxes_to_radmc(
-            self,
-            box_half_width_au=box_half_width_au,
-            isolation_radius_au=isolation_radius_au,
+        root = self.get_amr_root()
+
+        num = int(root.attrs["ramses_output_num"])
+        print(f"Using RAMSES output #{num} from Zarr")
+
+        output_file = self.convert.to_polaris(
+            ramses_dir,
+            polaris_dir,
+            root,
             hole_au=hole_au,
-            boxlen_pc=boxlen_pc,
-            require_luminosity=require_luminosity,
+            f_acc=f_acc,
         )
 
+        return output_file
 
+    def run_polaris_opacity(
+        self,
+        dust_components,
+        dust_size_min,
+        dust_size_max,
+        dust_size_powerlaw=-3.5,
+        mean_molecular_weight=2.37,
+        mass_fraction=0.01,
+        nr_threads=8,
+        grid_path=None,
+        n_dust_override=None,
+        polaris_binary="polaris",
+        cleanup=True,
+    ):
+        """
+        Run POLARIS with 1 photon package to generate dust opacity tables.
 
+        This is Step 4 of the pipeline. It requires that a POLARIS grid
+        file already exists (from convert_to_polaris, Step 2).
 
+        Parameters
+        ----------
+        dust_components : list of dict
+            Dust material definitions. Each dict has:
+                path (str): path to the .nk or .cs file
+                weight (float): mass fraction weight
+            Example:
+                [{"path": "/path/silicate.cs", "weight": 0.625},
+                 {"path": "/path/carbon.cs",   "weight": 0.375}]
+        dust_size_min : float
+            Minimum grain radius in metres.
+        dust_size_max : float
+            Maximum grain radius in metres.
+        dust_size_powerlaw : float
+            Power-law exponent (default -3.5 for MRN).
+        mean_molecular_weight : float
+            Gas mean molecular weight (default 2.37).
+        mass_fraction : float
+            Dust-to-gas mass fraction (default 0.01).
+        nr_threads : int
+            Number of OpenMP threads.
+        grid_path : str or Path or None
+            Path to the POLARIS grid file. If None, auto-detected from
+            the polaris output directory.
+        n_dust_override : int or None
+            Override the number of dust species (otherwise read from RAMSES info).
+        polaris_binary : str
+            Name or path of the POLARIS executable.
+        cleanup : bool
+            If True, remove previous POLARIS run outputs before starting.
+
+        Returns
+        -------
+        data_dir : Path
+            Path to the POLARIS data/ directory containing dust_mixture_*.dat.
+        """
+        from radprocess.polaris.opacity import run_opacity
+
+        ramses_dir = self.configparams.ramsesoutput.ramses_output_dir
+        polaris_dir = self.polaris_outputs_dir
+        f_acc = self.configparams.sim.facc
+
+        # Auto-detect grid file if not provided
+        if grid_path is None:
+            candidates = list(polaris_dir.glob("ramses_grid_*.dat"))
+            if not candidates:
+                raise FileNotFoundError(
+                    f"No POLARIS grid file found in {polaris_dir}. "
+                    "Run convert_to_polaris() first (Step 2)."
+                )
+            grid_path = candidates[0]
+            print(f"Auto-detected POLARIS grid: {grid_path}")
+
+        data_dir = run_opacity(
+            ramses_dir=ramses_dir,
+            polaris_dir=polaris_dir,
+            grid_path=grid_path,
+            dust_components=dust_components,
+            dust_size_min=dust_size_min,
+            dust_size_max=dust_size_max,
+            dust_size_powerlaw=dust_size_powerlaw,
+            mean_molecular_weight=mean_molecular_weight,
+            mass_fraction=mass_fraction,
+            nr_threads=nr_threads,
+            f_acc=f_acc,
+            n_dust_override=n_dust_override,
+            polaris_binary=polaris_binary,
+            cleanup=cleanup,
+        )
+
+        return data_dir

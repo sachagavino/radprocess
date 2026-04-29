@@ -571,13 +571,234 @@ class Convert:
 
         return grid, densityarray
 
-    def to_polaris(self):
-        self.rat3 = 1
+    def to_polaris(self, ramses_dir, polaris_dir, root, hole_au=0, f_acc=0.1,
+                   has_dust_in_sim=True):
+        """
+        Convert Zarr grid data to a POLARIS binary octree grid file.
+
+        The POLARIS grid stores per-cell data in the following order:
+            Bx, By, Bz, gas_mass_density, Tgas, dust_mass_density_1, ..., dust_mass_density_N
+
+        The corresponding POLARIS data IDs written in the header are:
+            4 (Bx), 5 (By), 6 (Bz), 28 (gas density), 3 (gas temperature),
+            29 (dust density) x N_dust
+
+        Parameters
+        ----------
+        ramses_dir : str or Path
+            Path to the RAMSES output directory (used to read sink info).
+        polaris_dir : str or Path
+            Output directory where the POLARIS grid file will be written.
+        root : zarr.Group
+            Zarr root containing the AMR grid data (from Convert.ramses()).
+        hole_au : float
+            Radius of the hole around each sink (AU). Density set to 0 inside.
+        f_acc : float
+            Accretion efficiency factor (not used directly here but kept for
+            consistency with to_radmc).
+        has_dust_in_sim : bool
+            If True, the simulation carries explicit dust fields.
+            If False, a single virtual dust species at 1 percent of gas density is assumed.
+
+        Returns
+        -------
+        output_file : Path
+            Path to the written POLARIS binary grid file.
+        """
+        import struct
+
+        CLR_LINE = " " * 80 + "\r"
+        POLARIS_GRID_ID = 20  # octree
+
+        polaris_dir = Path(polaris_dir)
+        polaris_dir.mkdir(parents=True, exist_ok=True)
+
+        # ----------------------------------------------------------
+        # 0) Read Zarr arrays
+        # ----------------------------------------------------------
+        l_m = root.attrs.get("l_m")
+        l_cm = root.attrs.get("l_cm")
+        nb_cells = root.attrs.get("nb_cells")
+        nb_species = root.attrs.get("nb_species", 1)
+
+        level = np.array(root["level"])
+        x = np.array(root["x"])
+        y = np.array(root["y"])
+        z = np.array(root["z"])
+
+        # Gas density: Zarr stores g/cc (CGS), POLARIS expects kg/m^3 (SI)
+        if "gas_massdensity" in root:
+            gas_massdensity = np.array(root["gas_massdensity"]) * 1e3  # g/cc -> kg/m^3
+        else:
+            raise RuntimeError("gas_massdensity not found in Zarr. "
+                               "Ensure the RAMSES grid was created with density fields enabled.")
+
+        # Dust densities: same conversion g/cc -> kg/m^3
+        if "dust_massdensities" in root:
+            dust_massdensity = np.array(root["dust_massdensities"]) * 1e3
+        elif "dust_massdensity" in root:
+            dust_massdensity = np.array(root["dust_massdensity"]) * 1e3
+            if dust_massdensity.ndim == 1:
+                dust_massdensity = dust_massdensity[:, np.newaxis]
+        else:
+            raise RuntimeError("No dust density field found in Zarr.")
+
+        n_dust = dust_massdensity.shape[1]
+
+        # B-field: POLARIS expects Gauss (CGS).
+        # If B-field was loaded via pymses, it should already be in Gauss
+        # after the unit_mag conversion. If not available, set to zero.
+        # The Zarr may or may not have B-field depending on user config.
+        has_bfield = "B_left" in root or "B_right" in root or "Bx" in root
+        if has_bfield:
+            # If stored as separate components
+            if "Bx" in root:
+                Bx = np.array(root["Bx"])
+                By = np.array(root["By"])
+                Bz = np.array(root["Bz"])
+            else:
+                # Not available as pre-computed components. 
+                # Set to zero and warn.
+                print("WARNING: B-field arrays not found in expected format. Setting B=0.")
+                has_bfield = False
+
+        if not has_bfield:
+            Bx = np.zeros(nb_cells, dtype=np.float32)
+            By = np.zeros(nb_cells, dtype=np.float32)
+            Bz = np.zeros(nb_cells, dtype=np.float32)
+
+        # Gas temperature (K)
+        if "Tgas" in root:
+            Tgas = np.array(root["Tgas"])
+        elif "Tdust" in root:
+            Tgas = np.array(root["Tdust"])
+        else:
+            print("WARNING: No temperature field found in Zarr. Setting T=10 K everywhere.")
+            Tgas = np.full(nb_cells, 10.0, dtype=np.float32)
+
+        # ----------------------------------------------------------
+        # 1) Read sinks for hole digging
+        # ----------------------------------------------------------
+        sinks = ramses.read.sink_info(ramses_dir)
+        boxlen_pc = l_m / pc2m
+
+        sink_positions_m = None
+        if sinks.num_sinks > 0 and hole_au > 0:
+            cols = sinks.columns
+            x_col = cols.index("x")
+            y_col = cols.index("y")
+            z_col = cols.index("z")
+
+            # Sink positions: RAMSES code units (pc), centered, then to meters
+            sink_positions_m = (
+                sinks.data[:, [x_col, y_col, z_col]] - boxlen_pc / 2.0
+            ) * pc2m
+
+        # ----------------------------------------------------------
+        # 2) Build octree
+        # ----------------------------------------------------------
+        x_min = -0.5 * l_m
+        y_min = -0.5 * l_m
+        z_min = -0.5 * l_m
+
+        max_level = int(level.max())
+        min_level = int(level.min())
+
+        print("\nPOLARIS Octree parameters:")
+        print(f"    Level (min, max)     : {min_level}, {max_level}")
+        print(f"    Nr. of cells (actual): {nb_cells}")
+        print(f"    Length (min, max)     : {l_m/(2**max_level):.3e}, {l_m:.3e} m")
+        print(f"    Dust species          : {n_dust}")
+        print(f"    B-field               : {'yes' if has_bfield else 'zeros'}")
+        print(f"    Temperature           : {'from Zarr' if 'Tgas' in root else 'default 10 K'}\n")
+
+        tree = OcTree(x_min, y_min, z_min, l_m)
+        tree.nr_of_cells = nb_cells
+
+        hole_radius2 = (hole_au * au2m) ** 2
+
+        print("Constructing POLARIS octree...")
+        for i in range(nb_cells):
+            c_x = x[i] - 0.5 * l_m
+            c_y = y[i] - 0.5 * l_m
+            c_z = z[i] - 0.5 * l_m
+
+            cell_gas = gas_massdensity[i]
+            cell_dust = dust_massdensity[i, :].copy()
+            cell_T = Tgas[i]
+
+            # Dig holes around sinks
+            if sink_positions_m is not None:
+                for sp in sink_positions_m:
+                    d2 = (c_x - sp[0])**2 + (c_y - sp[1])**2 + (c_z - sp[2])**2
+                    if d2 <= hole_radius2:
+                        cell_gas = 0.0
+                        cell_dust[:] = 0.0
+                        break
+
+            # POLARIS cell data order: Bx, By, Bz, gas_density, Tgas, dust_density_1, ..., dust_density_N
+            cell_data = [
+                float(Bx[i]), float(By[i]), float(Bz[i]),
+                float(cell_gas),
+                float(cell_T),
+            ] + cell_dust.tolist()
+
+            cell = CellOct(c_x, c_y, c_z, 0, int(level[i]))
+            cell.data = cell_data
+
+            tree.insertInTree(tree.root, cell, 0)
+
+            if i % 10000 == 0:
+                progress = 100.0 * i / nb_cells
+                sys.stdout.write(f"Constructing POLARIS octree: {progress:.1f}%\r")
+                sys.stdout.flush()
+
+        sys.stdout.write(CLR_LINE)
+        print("Constructing POLARIS octree: done\n")
+
+        # Check integrity
+        print("Checking octree integrity...")
+        tree.reset_counter()
+        check = tree.checkOcTree(tree.root)
+        sys.stdout.write(CLR_LINE)
+
+        if not check:
+            raise RuntimeError("ERROR: POLARIS octree integrity check failed!")
+        print("Octree structure: OK\n")
+
+        # ----------------------------------------------------------
+        # 3) Write binary POLARIS grid file
+        # ----------------------------------------------------------
+        # Infer RAMSES output number from Zarr attrs
+        ramses_num = int(root.attrs.get("ramses_output_num", 0))
+        output_file = polaris_dir / f"ramses_grid_{ramses_num:05d}.dat"
+
+        # Data IDs: 4=Bx, 5=By, 6=Bz, 28=gas density, 3=gas temperature, 29=dust density
+        data_ids = [4, 5, 6, 28, 3] + [29] * n_dust
+        data_len = len(data_ids)
+
+        print(f"Writing POLARIS binary grid to: {output_file}")
+
+        with open(output_file, "wb") as f:
+            # Header
+            f.write(struct.pack("H", POLARIS_GRID_ID))
+            f.write(struct.pack("H", data_len))
+
+            for d_id in data_ids:
+                f.write(struct.pack("H", d_id))
+
+            f.write(struct.pack("d", l_m))  # grid size in meters
+
+            # Octree data
+            tree.cell_counter = 0
+            tree.writeOcTree(f, tree.root)
+
+        sys.stdout.write(CLR_LINE)
+        print("Writing POLARIS grid: done\n")
+        print(f"POLARIS octree successfully created: {output_file}\n")
+
+        return output_file
 
 
     def polaris_photon(self):
         self.rat1 = 1
-
-
-
-    
