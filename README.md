@@ -13,7 +13,7 @@ Here is the pipeline dashboard:
 </picture>
 
 ## User's guide
-It is strongly recommanded to read the installation procedure in the radprocess documentation [here][1].
+The file INSTALL.md provides the full installation procedure. Alternatively, it is also possible to read the installation procedure and a how-to-use Radprocess in the documentation [here][1].
 
 ## External requirements (not installable via pip):
 
