@@ -75,9 +75,6 @@ The full pipeline consists of eight steps:
 Acknowledgements
 ================
 
-Radprocess was written by Sacha Gavino. The POLARIS grid conversion and
-imaging pipeline builds on scripts originally developed by Ilseung Han.
-
 If you use radprocess in a publication, please cite the relevant papers
 (citation information will be provided here once available).
 
