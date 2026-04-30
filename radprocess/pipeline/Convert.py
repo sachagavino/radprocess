@@ -798,7 +798,3 @@ class Convert:
         print(f"POLARIS octree successfully created: {output_file}\n")
 
         return output_file
-
-
-    def polaris_photon(self):
-        self.rat1 = 1
