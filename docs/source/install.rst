@@ -1,75 +1,166 @@
+.. _chap-install:
+
 Installation of radprocess
 **************************
+
+Requirements
+============
+
+- **Python 3.12** (3.11 may work, but 3.13+ is not yet supported due to pymses)
+- A working installation of `pymses <https://irfu.cea.fr/Projets/PYMSES/>`_
+  (provided internally, see below)
+- Optional: `POLARIS <https://portia.astrophysik.uni-kiel.de/polaris/>`_ and
+  `RADMC-3D <https://www.ita.uni-heidelberg.de/~dullemond/software/radmc-3d/>`_
+  executables, needed only for running Steps 4, 6, and 8 of the pipeline
+
 
 How to obtain radprocess
 ========================
 
-The radprocess package can be obtained by cloning its GitHub repository
-(pip installation will be available in the future). Cloning the repository
-is currently the recommended method, as it allows you to easily keep your
-installation up to date.
-
-From a terminal, navigate to the directory where you wish to install the code
-and run::
+Clone the GitHub repository and install in editable mode::
 
     git clone https://github.com/sachagavino/radprocess.git
+    cd radprocess
+    pip install -e .
 
-This will create a folder named ``radprocess/`` containing the full repository.
-You can then move into the directory::
+This installs radprocess and all its Python dependencies (numpy, scipy, zarr,
+matplotlib, astropy, etc.).
 
-    cd radprocess/
+If you also want the Gradio web interface::
 
-To update your local copy to the latest version, simply run::
+    pip install -e ".[gui]"
+
+To update your local copy later::
 
     git pull
+    pip install -e .
 
 
-Requirements and environment
+Alternative: using uv
+---------------------
+
+If you have `uv <https://docs.astral.sh/uv/>`_ installed::
+
+    git clone https://github.com/sachagavino/radprocess.git
+    cd radprocess
+    uv venv --python 3.12
+    source .venv/bin/activate
+    uv pip install -e .
+
+
+Installing pymses
+=================
+
+pymses is not available on PyPI and must be installed from the local source
+directory. The up-to-date version lives on the server (typically in the shared
+software folder). To install it, activate the radprocess environment first,
+then install pymses into it::
+
+    # Activate the radprocess environment
+    source /path/to/radprocess/.venv/bin/activate
+
+    # Go to the pymses source directory on the server
+    cd /path/to/pymses
+
+    # Install pymses into the active environment
+    pip install -e .
+
+This compiles the Cython extensions against the correct numpy version and
+registers pymses so that Python can find it.
+
+.. warning::
+
+   Do **not** use ``$PYTHONPATH`` or ``$PATH`` as an alternative.
+
+   - ``$PATH`` only affects executables, not Python imports.
+   - ``$PYTHONPATH`` bypasses pip, can cause version conflicts across
+     projects, and may lead to crashes if pymses was compiled against a
+     different numpy.
+
+
+Using radprocess from a notebook
+=================================
+
+Make sure the notebook kernel uses the same Python environment where radprocess
+is installed. You can verify from a notebook cell:
+
+.. code-block:: python
+
+    import sys
+    print(sys.executable)
+
+and compare with the output of ``which python`` in the terminal where you ran
+``pip install -e .``.
+
+
+Registering the environment as a Jupyter kernel
+-----------------------------------------------
+
+If your notebook uses a different default kernel, register the radprocess
+environment explicitly::
+
+    # From the terminal, with the radprocess venv activated:
+    pip install ipykernel
+    python -m ipykernel install --user --name radprocess --display-name "Python (radprocess)"
+
+Then select **Python (radprocess)** as the kernel in your notebook.
+
+
+Running the Gradio interface
 ============================
 
-From within the ``radprocess/`` directory, run::
-
-    ./setup.sh
-
-Follow the instructions displayed in the terminal. If the setup completes
-successfully, RadProcess will be installed and ready to use.
-
-You can then launch the code from anywhere in your terminal with::
+If installed with the ``[gui]`` extra, radprocess can be launched as a
+Gradio-based graphical interface::
 
     radprocess
 
-Alternatively, you may activate the virtual environment manually::
+One or more URLs will be displayed in the terminal.
 
-    source .venv/bin/activate
+- On a local machine, open the **local URL**.
+- On a remote server, use the **public (share) URL** if available, or set up
+  SSH tunneling::
 
-and then run::
+      ssh -L 7860:localhost:7860 user@server
 
-    radprocess
-
-RadProcess relies on several external software packages, including
-RADMC-3D, POLARIS, and PyMSES (Python>=3). These must be installed and properly
-configured on your system prior to using RadProcess. 
+  then open ``http://localhost:7860`` in your browser.
 
 
-Running the code
-================
+Verifying the installation
+==========================
 
-RadProcess is launched simply by typing::
+.. code-block:: python
 
-    radprocess
+    from radprocess.pipeline.Pipeline import Pipeline
 
-This will start a Gradio-based graphical interface. One or more URLs will be
-displayed in the terminal.
+    pipe = Pipeline()
+    pipe.configparams.ramsesoutput.ramses_output_dir = "/path/to/output_00940/"
+    pipe.set_working_dir("/path/to/working_directory")
 
-- On a local machine, it is recommended to open the **local URL**.
-- When running on a remote server, you should use the **public (share) URL**
-  if available. If the share link is not available (e.g., due to network
-  restrictions), you can access the interface via SSH tunneling.
+    # Check that RAMSES output is readable:
+    print(pipe.read_hydro_descriptor())
+    print(pipe.read_sink_info())
 
-In that case, run the following command from your local machine::
 
-    ssh -L 7860:localhost:7860 user@server
+Troubleshooting
+===============
 
-and then open the following address in your browser::
+**"No module named pymses"**
+    pymses must be installed separately into the radprocess environment.
+    See the section above.
 
-    http://localhost:7860
+**zarr import errors or "BloscCodec not found"**
+    radprocess requires zarr v3. Check your installed version::
+
+        python -c "import zarr; print(zarr.__version__)"
+
+    If it shows 2.x, upgrade with ``pip install "zarr>=3.0"``.
+
+**"No module named gradio"**
+    Gradio is optional. Install it with ``pip install -e ".[gui]"`` or
+    ``pip install gradio``. It is only needed for the web interface, not for
+    notebook or script usage.
+
+**numpy/Cython build errors when installing pymses**
+    pymses requires Cython at build time. Make sure Cython is installed
+    (``pip install cython``) before installing pymses. If you still get errors
+    about deprecated numpy C API, the internal pymses fork should handle this.
