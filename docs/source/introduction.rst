@@ -44,12 +44,11 @@ The full pipeline consists of eight steps:
    cell data (density, velocity, temperature, magnetic field) in a compressed
    Zarr archive for efficient reuse.
 
-2. **Convert to POLARIS grid** -- Build a POLARIS-format binary octree from the
-   Zarr data, with densities converted to SI units (kg/m\ :sup:`3`).
+2. **Convert to POLARIS grid** -- Build a POLARIS-format binary octree with densities 
+   converted to SI units (kg/m\ :sup:`3`).
 
 3. **Convert to RADMC-3D grid** -- Build a RADMC-3D-format octree
-   (``amr_grid.inp``, ``dust_density.inp``, ``stars.inp``) from the same Zarr
-   data, keeping CGS units (g/cm\ :sup:`3`).
+   (``amr_grid.inp``, ``dust_density.inp``, ``stars.inp``), keeping CGS units (g/cm\ :sup:`3`).
 
 4. **Run POLARIS opacity** -- Execute POLARIS with a single photon package
    to generate wavelength-dependent dust opacity tables
@@ -70,6 +69,11 @@ The full pipeline consists of eight steps:
 8. **Render images** -- Run POLARIS ``CMD_DUST_EMISSION`` on the merged grid
    to produce synthetic dust continuum images at user-specified wavelengths
    and viewing angles.
+
+Each step can be run independently. The user does not need to start from scratch at each session.
+There also exist additional actions (e.g. rending images with RADMC3D, post-processing inside a subbox of the AMR grid, etc.)
+that are described later in the documentation.
+
 
 
 Acknowledgements
