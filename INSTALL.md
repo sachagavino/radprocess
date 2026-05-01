@@ -11,15 +11,23 @@
 ```bash
 git clone https://github.com/sachagavino/radprocess.git
 cd radprocess
+python3.12 -m venv .venv
+source .venv/bin/activate
 pip install -e .
 ```
 
-This installs radprocess and all its Python dependencies (numpy, scipy, zarr, matplotlib, astropy, etc.).
+This creates a virtual environment (`.venv/`) inside the `radprocess/` directory, activates it, and installs radprocess with all its Python dependencies (numpy, scipy, zarr, matplotlib, astropy, etc.).
 
 If you also want the Gradio web interface:
 
 ```bash
 pip install -e ".[gui]"
+```
+
+Every time you open a new terminal and want to use radprocess, you need to activate the environment first:
+
+```bash
+source /path/to/radprocess/.venv/bin/activate
 ```
 
 ## Installing pymses

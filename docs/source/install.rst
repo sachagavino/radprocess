@@ -17,18 +17,27 @@ Requirements
 How to obtain radprocess
 ========================
 
-Clone the GitHub repository and install in editable mode::
+Clone the GitHub repository, create a virtual environment, and install in
+editable mode::
 
     git clone https://github.com/sachagavino/radprocess.git
     cd radprocess
+    python3.12 -m venv .venv
+    source .venv/bin/activate
     pip install -e .
 
-This installs radprocess and all its Python dependencies (numpy, scipy, zarr,
-matplotlib, astropy, etc.).
+This creates a virtual environment (``.venv/``) inside the ``radprocess/``
+directory, activates it, and installs radprocess with all its Python
+dependencies (numpy, scipy, zarr, matplotlib, astropy, etc.).
 
 If you also want the Gradio web interface::
 
     pip install -e ".[gui]"
+
+Every time you open a new terminal and want to use radprocess, you need to
+activate the environment first::
+
+    source path/to/radprocess/.venv/bin/activate
 
 To update your local copy later::
 
