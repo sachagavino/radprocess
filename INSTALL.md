@@ -11,7 +11,7 @@
 ```bash
 git clone https://github.com/sachagavino/radprocess.git
 cd radprocess
-python3.12 -m venv .venv
+python -m venv .venv
 source .venv/bin/activate
 pip install -e .
 ```
@@ -27,6 +27,7 @@ pip install -e ".[gui]"
 Every time you open a new terminal and want to use radprocess, you need to activate the environment first:
 
 ```bash
+cd /path/to/radprocess
 source /path/to/radprocess/.venv/bin/activate
 ```
 

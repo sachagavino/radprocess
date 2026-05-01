@@ -22,7 +22,7 @@ editable mode::
 
     git clone https://github.com/sachagavino/radprocess.git
     cd radprocess
-    python3.12 -m venv .venv
+    python -m venv .venv
     source .venv/bin/activate
     pip install -e .
 
