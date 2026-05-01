@@ -13,22 +13,24 @@ git clone https://github.com/sachagavino/radprocess.git
 cd radprocess
 python -m venv .venv
 source .venv/bin/activate
-pip install -e .
+python -m pip install -e .
 ```
 
 This creates a virtual environment (`.venv/`) inside the `radprocess/` directory, activates it, and installs radprocess with all its Python dependencies (numpy, scipy, zarr, matplotlib, astropy, etc.).
 
+> **Note:** Always use `python -m pip` instead of bare `pip`. On some systems, `pip` may point to a different Python environment than the one activated by the venv, which leads to packages being installed in the wrong place.
+
 If you also want the Gradio web interface:
 
 ```bash
-pip install -e ".[gui]"
+python -m pip install -e ".[gui]"
 ```
 
 Every time you open a new terminal and want to use radprocess, you need to activate the environment first:
 
 ```bash
 cd /path/to/radprocess
-source /path/to/radprocess/.venv/bin/activate
+source .venv/bin/activate
 ```
 
 ## Installing pymses
@@ -43,7 +45,7 @@ source /path/to/radprocess/.venv/bin/activate
 cd /path/to/pymses
 
 # Install pymses into the active environment
-pip install -e .
+python -m pip install -e .
 ```
 
 This compiles the Cython extensions against the correct numpy version and registers pymses so that Python can find it. Do not use `$PYTHONPATH` or `$PATH` as an alternative: `$PATH` only affects executables (not Python imports), and `$PYTHONPATH` bypasses pip, can cause version conflicts across projects, and may lead to crashes if pymses was compiled against a different numpy.
@@ -79,7 +81,7 @@ import sys
 print(sys.executable)
 ```
 
-and compare with the output of `which python` in the terminal where you ran `pip install -e .`.
+and compare with the output of `which python` in the terminal where you ran `python -m pip install -e .`.
 
 ### Registering the environment as a Jupyter kernel
 
@@ -87,7 +89,7 @@ If your notebook uses a different default kernel, register the radprocess enviro
 
 ```bash
 # From the terminal, with the radprocess venv activated:
-pip install ipykernel
+python -m pip install ipykernel
 python -m ipykernel install --user --name radprocess --display-name "Python (radprocess)"
 ```
 
@@ -110,10 +112,12 @@ print(pipe.read_sink_info())
 
 ## Troubleshooting
 
-**"No module named pymses"**: pymses must be installed separately. Contact the team for the internal version compatible with Python 3.12.
+**"No module named pymses"**: pymses must be installed separately into the radprocess environment. See the section above.
 
-**zarr import errors or "BloscCodec not found"**: radprocess requires zarr v3. Check your installed version with `python -c "import zarr; print(zarr.__version__)"`. If it shows 2.x, upgrade with `pip install "zarr>=3.0"`.
+**zarr import errors or "BloscCodec not found"**: radprocess requires zarr v3. Check your installed version with `python -c "import zarr; print(zarr.__version__)"`. If it shows 2.x, upgrade with `python -m pip install "zarr>=3.0"`.
 
-**"No module named gradio"**: Gradio is optional. Install it with `pip install -e ".[gui]"` or `pip install gradio`. It is only needed for the web interface, not for notebook or script usage.
+**"No module named gradio"**: Gradio is optional. Install it with `python -m pip install -e ".[gui]"` or `python -m pip install gradio`. It is only needed for the web interface, not for notebook or script usage.
 
-**numpy/Cython build errors when installing pymses**: pymses requires Cython at build time. Make sure Cython is installed (`pip install cython`) before installing pymses. If you still get errors about deprecated numpy C API, the internal pymses fork should handle this.
+**numpy/Cython build errors when installing pymses**: pymses requires Cython at build time. Make sure Cython is installed (`python -m pip install cython`) before installing pymses. If you still get errors about deprecated numpy C API, the internal pymses fork should handle this.
+
+**`pip` points to the wrong environment**: If `which pip` shows a path outside `.venv/`, use `python -m pip` instead. This guarantees you are using the pip that matches the active Python interpreter.
