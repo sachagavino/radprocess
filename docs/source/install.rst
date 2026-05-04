@@ -78,8 +78,9 @@ then install pymses into it::
     # Go to the pymses source directory on the server
     cd /path/to/pymses
 
-    # Install pymses into the active environment
-    python -m pip install -e .
+    # Install pymses (--no-build-isolation ensures it uses the numpy
+    # and Cython already installed in the environment)
+    python -m pip install -e . --no-build-isolation
 
 This compiles the Cython extensions against the correct numpy version and
 registers pymses so that Python can find it.
