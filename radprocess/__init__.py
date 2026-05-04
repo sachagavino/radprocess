@@ -2,5 +2,11 @@ from . import constants
 from . import dustproperties
 from . import pipeline
 from . import plotting
-from . import interface
+from . import polaris
 from . import radmc3d
+from . import ramses
+
+try:
+    from . import interface
+except ImportError:
+    pass

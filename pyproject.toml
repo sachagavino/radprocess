@@ -14,6 +14,7 @@ dependencies = [
     "numpy>=2.0,<3",
     "scipy",
     "cython",
+    "setuptools",
     "zarr>=3.0,<4",
     "numcodecs",
     "matplotlib",

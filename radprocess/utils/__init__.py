@@ -1,3 +1,7 @@
 from . import config
 from . import ramsesinfo
-from . import interactive
+
+try:
+    from . import interactive
+except ImportError:
+    pass
