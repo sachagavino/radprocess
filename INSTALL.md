@@ -11,7 +11,7 @@
 ```bash
 git clone https://github.com/sachagavino/radprocess.git
 cd radprocess
-python -m venv .venv
+python -m venv .venv --prompt radprocess
 source .venv/bin/activate
 python -m pip install -e .
 ```
