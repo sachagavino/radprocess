@@ -11,12 +11,19 @@
 ```bash
 git clone https://github.com/sachagavino/radprocess.git
 cd radprocess
-python -m venv .venv
+python -m venv .venv --prompt radprocess
 source .venv/bin/activate
 python -m pip install -e .
 ```
 
 This creates a virtual environment (`.venv/`) inside the `radprocess/` directory, activates it, and installs radprocess with all its Python dependencies (numpy, scipy, zarr, matplotlib, astropy, etc.).
+
+You can check the clean state by typing:
+
+```bash
+which python
+```
+This command should show .venv.
 
 > **Note:** Always use `python -m pip` instead of bare `pip`. On some systems, `pip` may point to a different Python environment than the one activated by the venv, which leads to packages being installed in the wrong place.
 
