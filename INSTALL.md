@@ -11,7 +11,7 @@
 ```bash
 git clone https://github.com/sachagavino/radprocess.git
 cd radprocess
-python -m venv .venv --prompt radprocess
+python -m venv .venv
 source .venv/bin/activate
 python -m pip install -e .
 ```
@@ -51,8 +51,9 @@ source /path/to/radprocess/.venv/bin/activate
 # Go to the pymses source directory on the server
 cd /path/to/pymses
 
-# Install pymses into the active environment
-python -m pip install -e .
+# Install pymses (--no-build-isolation ensures it uses the numpy
+# and Cython already installed in the environment)
+python -m pip install -e . --no-build-isolation
 ```
 
 This compiles the Cython extensions against the correct numpy version and registers pymses so that Python can find it. Do not use `$PYTHONPATH` or `$PATH` as an alternative: `$PATH` only affects executables (not Python imports), and `$PYTHONPATH` bypasses pip, can cause version conflicts across projects, and may lead to crashes if pymses was compiled against a different numpy.
