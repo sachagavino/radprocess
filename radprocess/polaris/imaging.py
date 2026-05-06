@@ -83,6 +83,12 @@ def write_imaging_cmd(
     nr_threads=8,
     midplane_zoom=1,
     fov_m=None,
+    polaris_cmd="CMD_DUST_EMISSION",
+    alignment="ALIG_PA",
+    peel_off=True,
+    acceptance_angle=None,
+    nr_photons_scat=None,
+    source_star_scat=None,
 ):
     """
     Write a POLARIS command file for dust continuum imaging at a
@@ -127,6 +133,31 @@ def write_imaging_cmd(
         the full grid extent (for whole-box imaging). If provided,
         the detector_dust line includes explicit sidelength parameters
         (for zoomed/inner imaging).
+    polaris_cmd : str
+        POLARIS command. Options:
+        - "CMD_DUST_EMISSION": thermal dust emission (Stokes I, Q, U)
+        - "CMD_DUST_SCATTERING": scattered light via Monte Carlo
+        - "CMD_DUST_EMISSION CMD_DUST_SCATTERING": both in sequence
+    alignment : str
+        Grain alignment mechanism. Options:
+        - "ALIG_PA": paramagnetic alignment (default)
+        - "ALIG_IDG": imperfect Davis-Greenstein
+        - "ALIG_RAT": radiative alignment torques
+        - "ALIG_INTERNAL": internal alignment
+        - "" or None: no alignment (randomly oriented grains)
+    peel_off : bool
+        If True, use the peel-off technique for scattering. More efficient
+        for producing images. Only relevant for CMD_DUST_SCATTERING.
+    acceptance_angle : float or None
+        Acceptance angle for scattered light in degrees. If None, POLARIS
+        uses its default. Only relevant for CMD_DUST_SCATTERING.
+    nr_photons_scat : int or None
+        Number of photon packages for the scattering Monte Carlo. If None,
+        no source_star line is written (only relevant for CMD_DUST_SCATTERING).
+    source_star_scat : list of dict or None
+        Stellar sources for scattering. Each dict has pos_m, radius_rsun,
+        temperature_k. If None and nr_photons_scat is set, a default point
+        source at the origin is used.
 
     Returns
     -------
@@ -160,7 +191,10 @@ def write_imaging_cmd(
 
         # --- <task> block ---
         f.write("\n<task> 1\n")
-        f.write("\n\t<cmd> CMD_DUST_EMISSION\n")
+
+        # POLARIS command(s)
+        for cmd in polaris_cmd.split():
+            f.write(f"\n\t<cmd> {cmd}\n")
 
         f.write(f'\n\t<path_grid> "{grid_path}"')
         out_str = str(output_path)
@@ -171,7 +205,35 @@ def write_imaging_cmd(
         f.write(f"\n\t<mu> {mean_molecular_weight}\n")
         f.write(f"\n\t<mass_fraction> {mass_fraction}\n")
 
-        f.write("\n\t<align> ALIG_PA\n")
+        # Grain alignment
+        if alignment:
+            f.write(f"\n\t<align> {alignment}\n")
+
+        # Scattering options
+        if peel_off:
+            f.write("\n\t<peel_off> 1\n")
+
+        if acceptance_angle is not None:
+            f.write(f"\n\t<acc_sca> {acceptance_angle}\n")
+
+        # Scattering source stars
+        if nr_photons_scat is not None:
+            if source_star_scat is not None:
+                for star in source_star_scat:
+                    xpos, ypos, zpos = star["pos_m"]
+                    r_rsun = star["radius_rsun"]
+                    temp = star["temperature_k"]
+                    f.write(
+                        f'\n\t<source_star nr_photons = "{nr_photons_scat}"> '
+                        f"{xpos:17.10e} {ypos:17.10e} {zpos:17.10e} "
+                        f"{r_rsun:17.10e} {temp:17.10e}"
+                    )
+            else:
+                # Default point source at origin
+                f.write(
+                    f'\n\t<source_star nr_photons = "{nr_photons_scat}"> '
+                    f"0.0 0.0 0.0 1.0 5000.0"
+                )
 
         plane_id = view_details["plane_id"]
         f.write(f"\n\t<write_inp_midplanes> {npix}")
@@ -233,6 +295,12 @@ def render_images(
     polaris_binary="polaris",
     label="whole",
     cleanup_views=True,
+    polaris_cmd="CMD_DUST_EMISSION",
+    alignment="ALIG_PA",
+    peel_off=True,
+    acceptance_angle=None,
+    nr_photons_scat=None,
+    source_star_scat=None,
 ):
     """
     Full Step 8: write POLARIS imaging command files and execute them
@@ -342,6 +410,12 @@ def render_images(
             nr_threads=nr_threads,
             midplane_zoom=midplane_zoom,
             fov_m=fov_m,
+            polaris_cmd=polaris_cmd,
+            alignment=alignment,
+            peel_off=peel_off,
+            acceptance_angle=acceptance_angle,
+            nr_photons_scat=nr_photons_scat,
+            source_star_scat=source_star_scat,
         )
 
         # Run POLARIS

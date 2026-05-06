@@ -70,21 +70,12 @@ class Convert:
 
         for name in scalar_fields:
             arr = output[name]
-            root.create_dataset(
+            root.create_array(
                 name,
-                shape=arr.shape,
-                dtype=arr.dtype,
                 data=arr,
                 chunks=(100_000,),
                 compressors=[compressor],
             )
-
-            # root.create_dataset(
-            #     name,
-            #     data=output[name],
-            #     chunks=(100_000,),
-            #     compressor=Blosc(cname="zstd", clevel=3),
-            # )
 
         # --Dust_massdensity-- (even though it is scalar we define a specific chunk because of possible multi-fluid model)
         arr = output["dust_massdensity"]
@@ -94,10 +85,8 @@ class Convert:
         else:
             chunks = (50_000, arr.shape[1])
 
-        root.create_dataset(
+        root.create_array(
             "dust_massdensity",
-            shape=arr.shape,
-            dtype=arr.dtype,
             data=arr,
             chunks=chunks,
             compressors=[compressor],
@@ -106,10 +95,8 @@ class Convert:
         # --Velocity field--
         if has_velocity:
             arr = output["velocity"]
-            root.create_dataset(
+            root.create_array(
                 "velocity",
-                shape=arr.shape,
-                dtype=arr.dtype,
                 data=arr,
                 chunks=(50_000, 3),
                 compressors=[compressor],
@@ -119,10 +106,8 @@ class Convert:
         if has_fluids:
             print('add here the grain sizes and dust number densities')
             arr = output["dust_massdensities"]
-            root.create_dataset(
+            root.create_array(
                 "dust_massdensities",
-                shape=arr.shape,
-                dtype=arr.dtype,
                 data=arr,
                 chunks=(50_000, arr.shape[1]),
                 compressors=[compressor],
@@ -131,10 +116,8 @@ class Convert:
         # --Fluid velocity field--
         if has_fluid_v:
             arr = output["fluid_v"]
-            root.create_dataset(
+            root.create_array(
                 "fluid_velocity",
-                shape=arr.shape,
-                dtype=arr.dtype,
                 data=arr,
                 chunks=(50_000, 3),
                 compressors=[compressor],
@@ -144,10 +127,8 @@ class Convert:
         # --Dust ratios--
         if has_ratio:
             arr = output["dust_ratio"]
-            root.create_dataset(
+            root.create_array(
                 "dust_ratio",
-                shape=arr.shape,
-                dtype=arr.dtype,
                 data=arr,
                 chunks=(50_000, arr.shape[1]),
                 compressors=[compressor],
@@ -455,13 +436,18 @@ class Convert:
             lint            = sinks.data[:, intlum_idx]*L_sun
             lacc            = sinks.data[:, acclum_idx]*L_sun
             ltot            = lint+lacc
-            if lacc > 0:
-                sink_radii      = f_acc * Ggram * sink_masses*acc_rate/lacc
-                sink_teff       = (ltot/(4*np.pi*sigma*sink_radii**2))**(1/4)
-            else:
-                print('WARNING: the accretion luminosity is 0. Will proceed with default values to compute the stellar radii')
-                sink_radii      = np.zeros((sinks.num_sinks))
-                sink_teff       = 5e3*np.ones((sinks.num_sinks))
+
+            # Compute stellar radii and Teff per sink
+            sink_radii = np.zeros(sinks.num_sinks)
+            sink_teff = 5e3 * np.ones(sinks.num_sinks)
+
+            has_lacc = lacc > 0
+            if has_lacc.any():
+                sink_radii[has_lacc] = f_acc * Ggram * sink_masses[has_lacc] * acc_rate[has_lacc] / lacc[has_lacc]
+                sink_teff[has_lacc] = (ltot[has_lacc] / (4 * np.pi * sigma * sink_radii[has_lacc]**2))**(1/4)
+
+            if not has_lacc.all():
+                print(f"WARNING: {(~has_lacc).sum()} sink(s) have zero accretion luminosity. Using default Teff=5000 K.")
 
             #sink_positions = sink_positions - boxlen_pc / 2.0
 
@@ -798,3 +784,7 @@ class Convert:
         print(f"POLARIS octree successfully created: {output_file}\n")
 
         return output_file
+
+
+    def polaris_photon(self):
+        self.rat1 = 1

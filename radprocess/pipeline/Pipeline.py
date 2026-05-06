@@ -220,24 +220,20 @@ class Pipeline:
         """
         Reads the sink_0000.info file from the RAMSES output directory
         using ramses.read.sink_info() function.
-        Returns a string suitable for HTML display.
+
+        Returns
+        -------
+        SinkInfo
+            A dataclass with columns, rows, num_sinks, and data.
+            Renders as a collapsible HTML table in Jupyter notebooks.
         """
 
         ramses_dir = self.configparams.ramsesoutput.ramses_output_dir
         try:
-            sink_data = ramses.read.sink_info(ramses_dir)
+            return ramses.read.sink_info(ramses_dir)
         except Exception as e:
-            return f"Error reading sink info: {e}"
-
-        # Convert to aligned string
-        columns = sink_data.columns
-        rows = sink_data.rows
-
-        lines = ["  ".join(columns)]
-        for row in rows:
-            lines.append("  ".join(str(row[col]) for col in columns))
-
-        return "\n".join(lines)
+            print(f"Error reading sink info: {e}")
+            return None
         
     def read_pymsesrc(self):
         """Reads the ~/.pymses/pymsesrc JSON file and returns a dictionary."""
@@ -757,9 +753,15 @@ class Pipeline:
         mass_fraction=None,
         polaris_binary=None,
         cleanup_views=True,
+        polaris_cmd="CMD_DUST_EMISSION",
+        alignment="ALIG_PA",
+        peel_off=True,
+        acceptance_angle=None,
+        nr_photons_scat=None,
+        source_star_scat=None,
     ):
         """
-        Run POLARIS CMD_DUST_EMISSION to produce synthetic images (Step 8).
+        Run POLARIS dust emission/scattering imaging (Step 8).
 
         Renders images at the specified wavelengths and viewing angles
         using the merged POLARIS grid (from Step 7).
@@ -785,8 +787,7 @@ class Pipeline:
         label : str
             Output subdirectory label ("whole" or "inner").
         grid_path : str or Path or None
-            Path to the merged grid. If None, auto-detected as
-            grid_temp.radmc3d.dat in the POLARIS output directory.
+            Path to the merged grid. If None, auto-detected.
         n_dust : int or None
             Number of dust species. If None, auto-detected from RAMSES info.
         nr_threads : int or None
@@ -803,6 +804,20 @@ class Pipeline:
             POLARIS executable name or path.
         cleanup_views : bool
             Remove previous image outputs before rendering.
+        polaris_cmd : str
+            POLARIS command: "CMD_DUST_EMISSION", "CMD_DUST_SCATTERING",
+            or both separated by a space.
+        alignment : str
+            Grain alignment: "ALIG_PA", "ALIG_IDG", "ALIG_RAT",
+            "ALIG_INTERNAL", or "" for no alignment.
+        peel_off : bool
+            Use peel-off technique for scattering.
+        acceptance_angle : float or None
+            Acceptance angle for scattered light (degrees).
+        nr_photons_scat : int or None
+            Number of photon packages for scattering Monte Carlo.
+        source_star_scat : list of dict or None
+            Stellar sources for scattering (pos_m, radius_rsun, temperature_k).
 
         Returns
         -------
@@ -875,4 +890,50 @@ class Pipeline:
             polaris_binary=polaris_binary,
             label=label,
             cleanup_views=cleanup_views,
+            polaris_cmd=polaris_cmd,
+            alignment=alignment,
+            peel_off=peel_off,
+            acceptance_angle=acceptance_angle,
+            nr_photons_scat=nr_photons_scat,
+            source_star_scat=source_star_scat,
+        )
+
+    def plot_density(self, plane="xy", field="gas", npix=512, log=True,
+                     cmap="inferno", vmin=None, vmax=None):
+        """
+        Plot a 2D midplane density map from the Zarr grid.
+
+        This can be used to visually check the grid after any conversion
+        step (RADMC-3D or POLARIS), since both are built from the same
+        underlying Zarr data.
+
+        Parameters
+        ----------
+        plane : str
+            Projection plane: "xy", "xz", or "yz".
+        field : str
+            Which density to plot:
+            - "gas": gas mass density
+            - "dust": total dust density (sum of all species)
+            - "dust_0", "dust_1", ...: individual dust species
+            - "all_dust": one subplot per dust species
+        npix : int
+            Number of pixels per side.
+        log : bool
+            If True, plot log10 of the density.
+        cmap : str
+            Matplotlib colormap.
+        vmin, vmax : float or None
+            Colorbar limits.
+
+        Returns
+        -------
+        matplotlib.figure.Figure
+        """
+        from radprocess.plotting.plot import density_midplane
+
+        root = self.get_amr_root()
+        return density_midplane(
+            root, plane=plane, field=field, npix=npix, log=log,
+            cmap=cmap, vmin=vmin, vmax=vmax,
         )

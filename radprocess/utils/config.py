@@ -359,20 +359,32 @@ class ConfigParams(StrictDataclass):
     def __repr__(self):
         return (
             "PARAMS\n-------\n"
-            + fancy_repr(self.inout)
+            + fancy_repr(self.ramsesoutput)
+            + "\n\n"
+            + fancy_repr(self.pipoutput)
             + "\n\n"
             + fancy_repr(self.amrsource)
             + "\n\n"
             + fancy_repr(self.sim)
+            + "\n\n"
+            + fancy_repr(self.radmc3d)
+            + "\n\n"
+            + fancy_repr(self.polaris)
         )
 
     def _repr_html_(self):
         body = (
-            _html_table(self.inout)
+            _html_table(self.ramsesoutput)
+            + "<br/>"
+            + _html_table(self.pipoutput)
             + "<br/>"
             + _html_table(self.amrsource)
             + "<br/>"
             + _html_table(self.sim)
+            + "<br/>"
+            + _html_table(self.radmc3d)
+            + "<br/>"
+            + _html_table(self.polaris)
         )
 
         return f"""

@@ -277,8 +277,8 @@ Putting it all together:
 
     # Dust materials
     dust = [
-        {"path": "/data/dust/silicate_d03.cs", "weight": 0.625},
-        {"path": "/data/dust/carbon_z96.cs",   "weight": 0.375},
+        {"path": "/data/dust/silicate_d03.nk", "weight": 0.625},
+        {"path": "/data/dust/graphite.nk",   "weight": 0.375},
     ]
 
     # Run the pipeline
