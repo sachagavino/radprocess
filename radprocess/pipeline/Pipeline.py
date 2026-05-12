@@ -463,6 +463,61 @@ class Pipeline:
 
         return output_file
 
+    def convert_subboxes(self, box_half_width_au=100.0, isolation_radius_au=100.0,
+                         hole_au=None, boxlen_pc=None, require_luminosity=True,
+                         sink_indices=None, gridstyle="octtree", coordsystem="cartesian"):
+        """
+        Extract one RADMC-3D subbox folder per isolated sink.
+
+        Parameters
+        ----------
+        box_half_width_au : float
+            Half-width of each subbox in AU (default 100 = 200 AU boxes).
+        isolation_radius_au : float
+            Minimum separation for sink filtering in AU.
+        hole_au : float or None
+            Hole radius around each sink (AU). If None, uses configparams.sim.size_hole_au.
+        boxlen_pc : float or None
+            RAMSES box size in pc. If None, derived from Zarr.
+        require_luminosity : bool
+            If True, skip sinks without luminosity data.
+        sink_indices : list of int or None
+            If provided, skip filtering and process only these sinks.
+        gridstyle : str
+            "octtree" (default) or "regular".
+        coordsystem : str
+            "cartesian" (default).
+
+        Returns
+        -------
+        results : dict
+            {sink_idx: (grid, densityarray)} for each processed sink.
+        catalog_path : Path
+            Path to the CSV catalog of processed sinks.
+        """
+        ramses_dir = self.configparams.ramsesoutput.ramses_output_dir
+        radmc_dir = self.radmc_outputs_dir
+        if hole_au is None:
+            hole_au = self.configparams.sim.size_hole_au
+        f_acc = self.configparams.sim.facc
+
+        root = self.get_amr_root()
+
+        return self.convert.to_radmc_subboxes(
+            ramses_dir=ramses_dir,
+            radmc_dir=radmc_dir,
+            root=root,
+            hole_au=hole_au,
+            f_acc=f_acc,
+            box_half_width_au=box_half_width_au,
+            isolation_radius_au=isolation_radius_au,
+            require_luminosity=require_luminosity,
+            boxlen_pc=boxlen_pc,
+            gridstyle=gridstyle,
+            coordsystem=coordsystem,
+            sink_indices=sink_indices,
+        )
+
     def run_polaris_opacity(
         self,
         dust_components,
@@ -896,44 +951,4 @@ class Pipeline:
             acceptance_angle=acceptance_angle,
             nr_photons_scat=nr_photons_scat,
             source_star_scat=source_star_scat,
-        )
-
-    def plot_density(self, plane="xy", field="gas", npix=512, log=True,
-                     cmap="inferno", vmin=None, vmax=None):
-        """
-        Plot a 2D midplane density map from the Zarr grid.
-
-        This can be used to visually check the grid after any conversion
-        step (RADMC-3D or POLARIS), since both are built from the same
-        underlying Zarr data.
-
-        Parameters
-        ----------
-        plane : str
-            Projection plane: "xy", "xz", or "yz".
-        field : str
-            Which density to plot:
-            - "gas": gas mass density
-            - "dust": total dust density (sum of all species)
-            - "dust_0", "dust_1", ...: individual dust species
-            - "all_dust": one subplot per dust species
-        npix : int
-            Number of pixels per side.
-        log : bool
-            If True, plot log10 of the density.
-        cmap : str
-            Matplotlib colormap.
-        vmin, vmax : float or None
-            Colorbar limits.
-
-        Returns
-        -------
-        matplotlib.figure.Figure
-        """
-        from radprocess.plotting.plot import density_midplane
-
-        root = self.get_amr_root()
-        return density_midplane(
-            root, plane=plane, field=field, npix=npix, log=log,
-            cmap=cmap, vmin=vmin, vmax=vmax,
         )

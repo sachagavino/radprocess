@@ -786,5 +786,161 @@ class Convert:
         return output_file
 
 
+    def to_radmc_subboxes(self, ramses_dir, radmc_dir, root, hole_au, f_acc,
+                          box_half_width_au=100.0, isolation_radius_au=100.0,
+                          require_luminosity=True, boxlen_pc=None,
+                          gridstyle="octtree", coordsystem="cartesian",
+                          lmin=1e-3, lmax=1e4, nlam=210, sink_indices=None):
+        """
+        Extract one RADMC-3D subbox folder per isolated sink.
+
+        This is a convenience method that delegates to the Subbox module.
+        It filters co-spatial sinks, then for each surviving sink extracts
+        the AMR cells within a box of ±box_half_width_au, builds an octree,
+        and writes amr_grid.inp, dust_density.inp, and stars.inp.
+
+        Parameters
+        ----------
+        ramses_dir : str or Path
+            RAMSES output directory (used to read sink info).
+        radmc_dir : str or Path
+            Base output directory. Subboxes are written to radmc_dir/subboxes/.
+        root : zarr.Group
+            Zarr root containing the AMR grid data.
+        hole_au : float
+            Hole radius around each sink (AU). Density set to 0 inside.
+        f_acc : float
+            Accretion efficiency factor for computing stellar radii.
+        box_half_width_au : float
+            Half-width of each subbox in AU (default 100 = 200 AU boxes).
+        isolation_radius_au : float
+            Minimum separation for sink filtering in AU.
+        require_luminosity : bool
+            If True, skip sinks without luminosity data.
+        boxlen_pc : float or None
+            RAMSES box size in pc. If None, derived from Zarr attrs.
+        gridstyle : str
+            "octtree" (default) or "regular".
+        coordsystem : str
+            "cartesian" (default).
+        lmin, lmax : float
+            Wavelength range in microns for stars.inp.
+        nlam : int
+            Number of wavelength points.
+        sink_indices : list of int or None
+            If provided, skip filtering and process only these sinks.
+
+        Returns
+        -------
+        results : dict
+            {sink_idx: (grid, densityarray)} for each processed sink.
+        catalog_path : Path
+            Path to the CSV catalog of processed sinks.
+        """
+        from radprocess.pipeline.Subbox import (
+            filter_sinks, build_subbox_radmc,
+        )
+
+        sinks = ramses.read.sink_info(ramses_dir)
+
+        if sinks.num_sinks == 0:
+            raise RuntimeError("No sinks found in this RAMSES output.")
+
+        # Infer boxlen_pc from domain size if not provided
+        if boxlen_pc is None:
+            l_m = root.attrs.get("l_m")
+            boxlen_pc = l_m / pc2m
+
+        print(f"Box length: {boxlen_pc:.6f} pc")
+        print(f"Total sinks in output: {sinks.num_sinks}")
+
+        # Filter sinks
+        if sink_indices is not None:
+            keep = np.array(sink_indices, dtype=int)
+            print(f"Using user-provided sink list: {len(keep)} sinks")
+        else:
+            keep = filter_sinks(
+                sinks,
+                isolation_radius_au=isolation_radius_au,
+                require_luminosity=require_luminosity,
+            )
+            print(f"After filtering (isolation={isolation_radius_au} AU, "
+                  f"require_lum={require_luminosity}): {len(keep)} sinks retained")
+
+        if len(keep) == 0:
+            raise RuntimeError("No sinks survived the filtering step.")
+
+        # Prepare output structure
+        import csv
+
+        base_dir = Path(radmc_dir) / "subboxes"
+        base_dir.mkdir(parents=True, exist_ok=True)
+
+        cols = sinks.columns
+        x_col = cols.index("x")
+        y_col = cols.index("y")
+        z_col = cols.index("z")
+        m_col = cols.index("M[Msol]")
+        acclum_col = cols.index("acc_lum[Lsol]")
+        intlum_col = cols.index("int_lum[Lsol]")
+
+        catalog_path = base_dir / "sink_catalog.csv"
+        with open(catalog_path, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow([
+                "folder", "sink_idx",
+                "x_pc", "y_pc", "z_pc",
+                "mass_msun", "acc_lum_lsun", "int_lum_lsun",
+            ])
+            for idx in keep:
+                folder_name = f"sink_{idx:04d}"
+                writer.writerow([
+                    folder_name, idx,
+                    sinks.data[idx, x_col],
+                    sinks.data[idx, y_col],
+                    sinks.data[idx, z_col],
+                    sinks.data[idx, m_col],
+                    sinks.data[idx, acclum_col],
+                    sinks.data[idx, intlum_col],
+                ])
+
+        print(f"Sink catalog written to: {catalog_path}")
+
+        # Loop over sinks and build subboxes
+        results = {}
+
+        for i, idx in enumerate(keep):
+            print(f"\n{'='*60}")
+            print(f"  Processing sink {idx}  ({i+1}/{len(keep)})")
+            print(f"{'='*60}")
+
+            sink_dir = base_dir / f"sink_{idx:04d}"
+
+            grid, dens = build_subbox_radmc(
+                root=root,
+                ramses_dir=ramses_dir,
+                output_dir=sink_dir,
+                sink_idx=idx,
+                sinks=sinks,
+                box_half_width_au=box_half_width_au,
+                hole_au=hole_au,
+                f_acc=f_acc,
+                boxlen_pc=boxlen_pc,
+                gridstyle=gridstyle,
+                coordsystem=coordsystem,
+                lmin=lmin,
+                lmax=lmax,
+                nlam=nlam,
+            )
+
+            results[idx] = (grid, dens)
+
+        print(f"\n{'='*60}")
+        print(f"  All done: {len(results)} subboxes written to {base_dir}")
+        print(f"{'='*60}\n")
+
+        return results, catalog_path
+
+
     def polaris_photon(self):
         self.rat1 = 1

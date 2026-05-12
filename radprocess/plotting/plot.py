@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 from ..constants.constants import au2cm, M_sun, R_sun
 
 
-def plot_sink_columns(sink_data, x_col, y_col):
+def sink_columns(sink_data, x_col, y_col):
     """
     sink_data: list of dicts from sink_info
     x_col, y_col: strings
@@ -25,7 +25,7 @@ def plot_sink_columns(sink_data, x_col, y_col):
 
 
 
-def plot_ramses_histogram(root, y_field):
+def ramses_histogram(root, y_field):
     """
     Scatter-density histogram of dust density vs chosen RAMSES field.
 
