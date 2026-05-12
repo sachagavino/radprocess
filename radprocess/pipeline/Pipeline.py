@@ -180,7 +180,8 @@ class Pipeline:
             for idx, name in variables.items():
                 text += f"  #{idx}: {name}\n"
 
-            text += f"\nDust ratios detected: {nb_dust}\n"
+            # text += f"\nDust ratios detected: {nb_dust}\n"
+            text += f"\nDust components detected: {nb_dust}\n"
             self.configparams.nb_dust = nb_dust
             return text
 
