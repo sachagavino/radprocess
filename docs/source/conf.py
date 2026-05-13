@@ -10,8 +10,8 @@ sys.path.insert(0, os.path.abspath("../.."))
 # -- Project information
 
 project = "radprocess"
-copyright = "{0}, Sacha Gavino".format(datetime.datetime.now().year)
-author = "Sacha Gavino"
+copyright = "{0}, Sacha Gavino; Ilseung Han".format(datetime.datetime.now().year)
+author = "Sacha Gavino, Ilseung Han"
 release = "0.1.0"
 
 # -- General configuration
