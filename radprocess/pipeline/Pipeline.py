@@ -21,15 +21,21 @@ class Pipeline:
 
     @property
     def ramses_converted_dir(self):
-        return Path(self.configparams.pipoutput.main_output_dir) / "ramses"
+        d = Path(self.configparams.dir.pipeline_output) / "ramses"
+        d.mkdir(parents=True, exist_ok=True)
+        return d
 
     @property
     def radmc_outputs_dir(self):
-        return Path(self.configparams.pipoutput.main_output_dir) / "radmc3d"
+        d = Path(self.configparams.dir.pipeline_output) / "radmc3d"
+        d.mkdir(parents=True, exist_ok=True)
+        return d
 
     @property
     def polaris_outputs_dir(self):
-        return Path(self.configparams.pipoutput.main_output_dir) / "polaris"
+        d = Path(self.configparams.dir.pipeline_output) / "polaris"
+        d.mkdir(parents=True, exist_ok=True)
+        return d
 
     def get_amr_root(self):
         """
@@ -172,7 +178,7 @@ class Pipeline:
         Reads hydro_file_descriptor.txt from the current RAMSES directory.
         Returns a formatted string.
         """
-        ramses_dir = self.configparams.ramsesoutput.ramses_output_dir
+        ramses_dir = self.configparams.dir.ramses_output
         try:
             nvar, variables, nb_dust = ramses.read.hydro_file_descriptor(ramses_dir)
 
@@ -193,7 +199,7 @@ class Pipeline:
         Reads other *_file_descriptor.txt (mf_, mp_, etc.) from RAMSES directory.
         If found, overrides nb_dust using number of fluids.
         """
-        ramses_dir = self.configparams.ramsesoutput.ramses_output_dir
+        ramses_dir = self.configparams.dir.ramses_output
 
         try:
             nvar, variables, nb_fluids = ramses.read.other_file_descriptor(ramses_dir)
@@ -229,7 +235,7 @@ class Pipeline:
             Renders as a collapsible HTML table in Jupyter notebooks.
         """
 
-        ramses_dir = self.configparams.ramsesoutput.ramses_output_dir
+        ramses_dir = self.configparams.dir.ramses_output
         try:
             return ramses.read.sink_info(ramses_dir)
         except Exception as e:
@@ -260,7 +266,7 @@ class Pipeline:
     #     then return the Pymsesrc object so Jupyter displays it.
     #     """
     #     self.ndust = ramses.read.hydro_file_descriptor(
-    #         self.configparams.ramsesoutput.ramses_output_dir
+    #         self.configparams.dir.ramses_output
     #     )[2]
     #     print(f'there is {ndust} dust species in the RAMSES simulation.')  
     #     # Write the file
@@ -284,7 +290,7 @@ class Pipeline:
         """
         Write ~/.pymses/pymsesrc based on current configuration.
         """
-        ramses_dir = self.configparams.ramsesoutput.ramses_output_dir
+        ramses_dir = self.configparams.dir.ramses_output
         #ndust = ramses.read.hydro_file_descriptor(ramses_dir)[2]
         #print(f"There are {ndust} dust species in this RAMSES simulation.")
         # Write the file
@@ -308,7 +314,7 @@ class Pipeline:
             (base / sub).mkdir(exist_ok=True)
 
         # Store ONLY the main dir in config
-        self.configparams.pipoutput.main_output_dir = str(base)
+        self.configparams.dir.pipeline_output = str(base)
 
         return (
             f"✔ Working directory set to:\n{base}\n\n"
@@ -377,7 +383,7 @@ class Pipeline:
         read RAMSES files, convert into AMR and store
         the grid inside the amr_grid from Grid.
         """
-        ramses_dir = self.configparams.ramsesoutput.ramses_output_dir
+        ramses_dir = self.configparams.dir.ramses_output
         #radmc_dir = self.configparams.pipoutput.radmc_output_dir
         ramses_out = self.ramses_converted_dir
         ramses_out.mkdir(parents=True, exist_ok=True)
@@ -402,7 +408,7 @@ class Pipeline:
         self.grid.add_amr_grid(amr_grid)
 
     def convert_to_radmc(self, gridstyle="octtree", coordsystem="cartesian"):
-        ramses_dir = self.configparams.ramsesoutput.ramses_output_dir
+        ramses_dir = self.configparams.dir.ramses_output
         radmc_dir = self.radmc_outputs_dir
         hole_au = self.configparams.sim.size_hole_au
         f_acc = self.configparams.sim.facc
@@ -443,7 +449,7 @@ class Pipeline:
         output_file : Path
             Path to the written POLARIS binary grid file.
         """
-        ramses_dir = self.configparams.ramsesoutput.ramses_output_dir
+        ramses_dir = self.configparams.dir.ramses_output
         polaris_dir = self.polaris_outputs_dir
         if hole_au is None:
             hole_au = self.configparams.sim.size_hole_au
@@ -464,14 +470,17 @@ class Pipeline:
 
         return output_file
 
-    def convert_subboxes(self, box_half_width_au=100.0, isolation_radius_au=100.0,
+    def convert_subboxes(self, which_rad="radmc",
+                         box_half_width_au=100.0, isolation_radius_au=100.0,
                          hole_au=None, boxlen_pc=None, require_luminosity=True,
                          sink_indices=None, gridstyle="octtree", coordsystem="cartesian"):
         """
-        Extract one RADMC-3D subbox folder per isolated sink.
+        Extract one subbox folder per isolated sink, in RADMC-3D or POLARIS format.
 
         Parameters
         ----------
+        which_rad : str
+            Output format: "radmc" for RADMC-3D, "polaris" for POLARIS.
         box_half_width_au : float
             Half-width of each subbox in AU (default 100 = 200 AU boxes).
         isolation_radius_au : float
@@ -485,31 +494,39 @@ class Pipeline:
         sink_indices : list of int or None
             If provided, skip filtering and process only these sinks.
         gridstyle : str
-            "octtree" (default) or "regular".
+            "octtree" (default) or "regular". Only used for RADMC-3D.
         coordsystem : str
-            "cartesian" (default).
+            "cartesian" (default). Only used for RADMC-3D.
 
         Returns
         -------
         results : dict
-            {sink_idx: (grid, densityarray)} for each processed sink.
+            {sink_idx: output} for each processed sink.
         catalog_path : Path
             Path to the CSV catalog of processed sinks.
         """
-        ramses_dir = self.configparams.ramsesoutput.ramses_output_dir
-        radmc_dir = self.radmc_outputs_dir
+        ramses_dir = self.configparams.dir.ramses_output
         if hole_au is None:
             hole_au = self.configparams.sim.size_hole_au
         f_acc = self.configparams.sim.facc
 
+        # Choose output directory based on format
+        if which_rad == "radmc":
+            output_dir = self.radmc_outputs_dir
+        elif which_rad == "polaris":
+            output_dir = self.polaris_outputs_dir
+        else:
+            raise ValueError(f"which_rad must be 'radmc' or 'polaris', got '{which_rad}'")
+
         root = self.get_amr_root()
 
-        return self.convert.to_radmc_subboxes(
+        return self.convert.to_subboxes(
             ramses_dir=ramses_dir,
-            radmc_dir=radmc_dir,
+            output_dir=output_dir,
             root=root,
             hole_au=hole_au,
             f_acc=f_acc,
+            which_rad=which_rad,
             box_half_width_au=box_half_width_au,
             isolation_radius_au=isolation_radius_au,
             require_luminosity=require_luminosity,
@@ -580,7 +597,7 @@ class Pipeline:
         """
         from radprocess.polaris.opacity import run_opacity
 
-        ramses_dir = self.configparams.ramsesoutput.ramses_output_dir
+        ramses_dir = self.configparams.dir.ramses_output
         polaris_dir = self.polaris_outputs_dir
         f_acc = self.configparams.sim.facc
         pc = self.configparams.polaris
@@ -680,7 +697,7 @@ class Pipeline:
         """
         from radprocess.radmc3d.prepare import prepare_radmc3d_inputs
 
-        ramses_dir = self.configparams.ramsesoutput.ramses_output_dir
+        ramses_dir = self.configparams.dir.ramses_output
         radmc_dir = self.radmc_outputs_dir
         f_acc = self.configparams.sim.facc
         rc = self.configparams.radmc3d
@@ -778,7 +795,7 @@ class Pipeline:
         """
         from radprocess.polaris.merge import merge_radmc3d_temperature
 
-        ramses_dir = self.configparams.ramsesoutput.ramses_output_dir
+        ramses_dir = self.configparams.dir.ramses_output
         polaris_dir = self.polaris_outputs_dir
         radmc_dir = self.radmc_outputs_dir
 
@@ -884,7 +901,7 @@ class Pipeline:
         from radprocess.polaris.opacity import _find_info_file, _read_ndust
 
         polaris_dir = self.polaris_outputs_dir
-        image_output_dir = Path(self.configparams.pipoutput.main_output_dir) / "images"
+        image_output_dir = Path(self.configparams.dir.pipeline_output) / "images"
         pc = self.configparams.polaris
 
         # Defaults from config dataclass
@@ -914,7 +931,7 @@ class Pipeline:
 
         # Auto-detect n_dust
         if n_dust is None:
-            ramses_dir = self.configparams.ramsesoutput.ramses_output_dir
+            ramses_dir = self.configparams.dir.ramses_output
             info_path = _find_info_file(ramses_dir)
             n_dust = _read_ndust(info_path)
             if n_dust == 0:

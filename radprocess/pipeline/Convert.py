@@ -786,31 +786,30 @@ class Convert:
         return output_file
 
 
-    def to_radmc_subboxes(self, ramses_dir, radmc_dir, root, hole_au, f_acc,
-                          box_half_width_au=100.0, isolation_radius_au=100.0,
-                          require_luminosity=True, boxlen_pc=None,
-                          gridstyle="octtree", coordsystem="cartesian",
-                          lmin=1e-3, lmax=1e4, nlam=210, sink_indices=None):
+    def to_subboxes(self, ramses_dir, output_dir, root, hole_au, f_acc,
+                    which_rad="radmc",
+                    box_half_width_au=100.0, isolation_radius_au=100.0,
+                    require_luminosity=True, boxlen_pc=None,
+                    gridstyle="octtree", coordsystem="cartesian",
+                    lmin=1e-3, lmax=1e4, nlam=210, sink_indices=None):
         """
-        Extract one RADMC-3D subbox folder per isolated sink.
-
-        This is a convenience method that delegates to the Subbox module.
-        It filters co-spatial sinks, then for each surviving sink extracts
-        the AMR cells within a box of ±box_half_width_au, builds an octree,
-        and writes amr_grid.inp, dust_density.inp, and stars.inp.
+        Extract one subbox folder per isolated sink, in RADMC-3D or POLARIS format.
 
         Parameters
         ----------
         ramses_dir : str or Path
             RAMSES output directory (used to read sink info).
-        radmc_dir : str or Path
-            Base output directory. Subboxes are written to radmc_dir/subboxes/.
+        output_dir : str or Path
+            Base output directory. Subboxes are written to
+            output_dir/subboxes/.
         root : zarr.Group
             Zarr root containing the AMR grid data.
         hole_au : float
             Hole radius around each sink (AU). Density set to 0 inside.
         f_acc : float
             Accretion efficiency factor for computing stellar radii.
+        which_rad : str
+            Output format: "radmc" for RADMC-3D, "polaris" for POLARIS.
         box_half_width_au : float
             Half-width of each subbox in AU (default 100 = 200 AU boxes).
         isolation_radius_au : float
@@ -820,39 +819,44 @@ class Convert:
         boxlen_pc : float or None
             RAMSES box size in pc. If None, derived from Zarr attrs.
         gridstyle : str
-            "octtree" (default) or "regular".
+            "octtree" (default) or "regular". Only used for RADMC-3D.
         coordsystem : str
-            "cartesian" (default).
+            "cartesian" (default). Only used for RADMC-3D.
         lmin, lmax : float
-            Wavelength range in microns for stars.inp.
+            Wavelength range in microns for stars.inp. Only used for RADMC-3D.
         nlam : int
-            Number of wavelength points.
+            Number of wavelength points. Only used for RADMC-3D.
         sink_indices : list of int or None
             If provided, skip filtering and process only these sinks.
 
         Returns
         -------
         results : dict
-            {sink_idx: (grid, densityarray)} for each processed sink.
+            {sink_idx: output} for each processed sink.
+            For RADMC-3D: output = (grid, densityarray).
+            For POLARIS: output = Path to the binary grid file.
         catalog_path : Path
             Path to the CSV catalog of processed sinks.
         """
         from radprocess.pipeline.Subbox import (
-            filter_sinks, build_subbox_radmc,
+            filter_sinks, build_subbox_radmc, build_subbox_polaris,
         )
+
+        if which_rad not in ("radmc", "polaris"):
+            raise ValueError(f"which_rad must be 'radmc' or 'polaris', got '{which_rad}'")
 
         sinks = ramses.read.sink_info(ramses_dir)
 
         if sinks.num_sinks == 0:
             raise RuntimeError("No sinks found in this RAMSES output.")
 
-        # Infer boxlen_pc from domain size if not provided
         if boxlen_pc is None:
             l_m = root.attrs.get("l_m")
             boxlen_pc = l_m / pc2m
 
         print(f"Box length: {boxlen_pc:.6f} pc")
         print(f"Total sinks in output: {sinks.num_sinks}")
+        print(f"Output format: {which_rad.upper()}")
 
         # Filter sinks
         if sink_indices is not None:
@@ -873,7 +877,7 @@ class Convert:
         # Prepare output structure
         import csv
 
-        base_dir = Path(radmc_dir) / "subboxes"
+        base_dir = Path(output_dir) / "subboxes"
         base_dir.mkdir(parents=True, exist_ok=True)
 
         cols = sinks.columns
@@ -906,7 +910,7 @@ class Convert:
 
         print(f"Sink catalog written to: {catalog_path}")
 
-        # Loop over sinks and build subboxes
+        # Loop over sinks
         results = {}
 
         for i, idx in enumerate(keep):
@@ -916,24 +920,37 @@ class Convert:
 
             sink_dir = base_dir / f"sink_{idx:04d}"
 
-            grid, dens = build_subbox_radmc(
-                root=root,
-                ramses_dir=ramses_dir,
-                output_dir=sink_dir,
-                sink_idx=idx,
-                sinks=sinks,
-                box_half_width_au=box_half_width_au,
-                hole_au=hole_au,
-                f_acc=f_acc,
-                boxlen_pc=boxlen_pc,
-                gridstyle=gridstyle,
-                coordsystem=coordsystem,
-                lmin=lmin,
-                lmax=lmax,
-                nlam=nlam,
-            )
+            if which_rad == "radmc":
+                result = build_subbox_radmc(
+                    root=root,
+                    ramses_dir=ramses_dir,
+                    output_dir=sink_dir,
+                    sink_idx=idx,
+                    sinks=sinks,
+                    box_half_width_au=box_half_width_au,
+                    hole_au=hole_au,
+                    f_acc=f_acc,
+                    boxlen_pc=boxlen_pc,
+                    gridstyle=gridstyle,
+                    coordsystem=coordsystem,
+                    lmin=lmin,
+                    lmax=lmax,
+                    nlam=nlam,
+                )
+            else:
+                result = build_subbox_polaris(
+                    root=root,
+                    ramses_dir=ramses_dir,
+                    output_dir=sink_dir,
+                    sink_idx=idx,
+                    sinks=sinks,
+                    box_half_width_au=box_half_width_au,
+                    hole_au=hole_au,
+                    f_acc=f_acc,
+                    boxlen_pc=boxlen_pc,
+                )
 
-            results[idx] = (grid, dens)
+            results[idx] = result
 
         print(f"\n{'='*60}")
         print(f"  All done: {len(results)} subboxes written to {base_dir}")

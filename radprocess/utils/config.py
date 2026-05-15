@@ -204,25 +204,11 @@ class StrictDataclass:
 # PARAMETER DATACLASSES
 # =======================================================
 @dataclass
-class RamsesOutput(StrictDataclass):
-    ramses_output_dir: str = field(default='ramses_outputs/', 
-        metadata={'desc': r'The RAMSES output directory path.'})
-    
-    def __repr__(self):  # terminal
-        return fancy_repr(self)
-
-    def _repr_html_(self):  # Jupyter
-        return _html_repr(self)
-
-
-@dataclass
-class PipelineOutput(StrictDataclass):
-    main_output_dir: str = field(default='pipeline_outputs/', 
+class Directories(StrictDataclass):
+    ramses_output: str = field(default='ramses_outputs/', 
+        metadata={'desc': r'The RAMSES simulation output directory path.'})
+    pipeline_output: str = field(default='pipeline_outputs/', 
         metadata={'desc': r'The main pipeline output directory path.'})
-    # polaris_output_dir: str = field(default='polaris_outputs/', 
-    #     metadata={'desc': r'The POLARIS output directory path.'})
-    # radmc_output_dir: str = field(default='radmc3d_outputs/', 
-    #     metadata={'desc': r'The RADMC3D output directory path.'})
     
     def __repr__(self):  # terminal
         return fancy_repr(self)
@@ -348,8 +334,7 @@ class PolarisConfig(StrictDataclass):
 # ---------------- Structure Params ----------------
 @dataclass
 class ConfigParams(StrictDataclass):
-    ramsesoutput: RamsesOutput= field(default_factory=RamsesOutput)
-    pipoutput: PipelineOutput= field(default_factory=PipelineOutput)
+    dir: Directories = field(default_factory=Directories)
     amrsource: AmrSource = field(default_factory=AmrSource)
     sim: Sim = field(default_factory=Sim)
     radmc3d: Radmc3dConfig = field(default_factory=Radmc3dConfig)
@@ -359,9 +344,7 @@ class ConfigParams(StrictDataclass):
     def __repr__(self):
         return (
             "PARAMS\n-------\n"
-            + fancy_repr(self.ramsesoutput)
-            + "\n\n"
-            + fancy_repr(self.pipoutput)
+            + fancy_repr(self.dir)
             + "\n\n"
             + fancy_repr(self.amrsource)
             + "\n\n"
@@ -374,9 +357,7 @@ class ConfigParams(StrictDataclass):
 
     def _repr_html_(self):
         body = (
-            _html_table(self.ramsesoutput)
-            + "<br/>"
-            + _html_table(self.pipoutput)
+            _html_table(self.dir)
             + "<br/>"
             + _html_table(self.amrsource)
             + "<br/>"
