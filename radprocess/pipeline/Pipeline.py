@@ -5,6 +5,7 @@ from dataclasses import fields
 from pathlib import Path
 
 import zarr
+import numpy as np
 
 from radprocess.pipeline.Grid import Grid
 from radprocess.pipeline.Convert import Convert
@@ -473,7 +474,8 @@ class Pipeline:
     def convert_subboxes(self, which_rad="radmc",
                          box_half_width_au=100.0, isolation_radius_au=100.0,
                          hole_au=None, boxlen_pc=None, require_luminosity=True,
-                         sink_indices=None, gridstyle="octtree", coordsystem="cartesian"):
+                         sink_indices=None, gridstyle="octtree", coordsystem="cartesian",
+                         min_cells=0):
         """
         Extract one subbox folder per isolated sink, in RADMC-3D or POLARIS format.
 
@@ -497,6 +499,9 @@ class Pipeline:
             "octtree" (default) or "regular". Only used for RADMC-3D.
         coordsystem : str
             "cartesian" (default). Only used for RADMC-3D.
+        min_cells : int
+            Minimum number of cells in the subbox. Sinks with fewer
+            cells are skipped (default 0 = no minimum).
 
         Returns
         -------
@@ -534,6 +539,7 @@ class Pipeline:
             gridstyle=gridstyle,
             coordsystem=coordsystem,
             sink_indices=sink_indices,
+            min_cells=min_cells,
         )
 
     def run_polaris_opacity(
@@ -658,14 +664,12 @@ class Pipeline:
         nphot=None,
         setthreads=None,
         scattering_mode=None,
-        polaris_skiprows=29,
+        polaris_skiprows=40,
+        subbox=False,
     ):
         """
         Convert POLARIS opacities to RADMC-3D format and write all
         remaining RADMC-3D input files (Step 5).
-
-        Requires that Steps 3 (RADMC-3D grid) and 4 (POLARIS opacity run)
-        have already been completed.
 
         Parameters default to values in configparams.radmc3d when not
         explicitly provided.
@@ -673,8 +677,7 @@ class Pipeline:
         Parameters
         ----------
         polaris_data_dir : str or Path or None
-            Path to the POLARIS data/ directory. If None, auto-detected
-            from {polaris_outputs_dir}/data/.
+            Path to the POLARIS data/ directory. If None, auto-detected.
         n_dust : int or None
             Number of dust species. If None, auto-detected from POLARIS output.
         wave_min, wave_max : float or None
@@ -689,6 +692,12 @@ class Pipeline:
             Scattering mode (1 = isotropic).
         polaris_skiprows : int
             Header rows to skip in POLARIS opacity files.
+        subbox : bool
+            If True, after writing the shared files to the main radmc3d/
+            directory, distribute them (dustkappa_*.inp, dustopac.inp,
+            wavelength_micron.inp, radmc3d.inp) to all subbox folders
+            in radmc3d/subboxes/. stars.inp is NOT overwritten since
+            each subbox has its own star (written by convert_subboxes).
 
         Returns
         -------
@@ -696,6 +705,7 @@ class Pipeline:
             The RADMC-3D directory containing all input files.
         """
         from radprocess.radmc3d.prepare import prepare_radmc3d_inputs
+        import shutil
 
         ramses_dir = self.configparams.dir.ramses_output
         radmc_dir = self.radmc_outputs_dir
@@ -724,7 +734,7 @@ class Pipeline:
                     "Run run_polaris_opacity() first (Step 4)."
                 )
 
-        return prepare_radmc3d_inputs(
+        result = prepare_radmc3d_inputs(
             ramses_dir=ramses_dir,
             radmc_dir=radmc_dir,
             polaris_data_dir=polaris_data_dir,
@@ -739,72 +749,338 @@ class Pipeline:
             polaris_skiprows=polaris_skiprows,
         )
 
-    def run_radmc3d_mctherm(self, radmc3d_binary="radmc3d"):
+        # Distribute shared files to subbox folders
+        if subbox:
+            subbox_base = radmc_dir / "subboxes"
+            if not subbox_base.exists():
+                raise FileNotFoundError(
+                    f"Subbox directory not found: {subbox_base}. "
+                    "Run convert_subboxes(which_rad='radmc') first."
+                )
+
+            # Collect shared files (everything except stars.inp,
+            # amr_grid.inp, dust_density.inp which are per-sink)
+            shared_files = (
+                list(radmc_dir.glob("dustkappa_*.inp"))
+                + [radmc_dir / "dustopac.inp",
+                   radmc_dir / "wavelength_micron.inp",
+                   radmc_dir / "radmc3d.inp"]
+            )
+
+            # Read the wavelength grid (same one just written)
+            wavelengths = np.logspace(np.log10(wave_min), np.log10(wave_max), n_wavelengths)
+
+            sink_dirs = sorted([
+                d for d in subbox_base.iterdir()
+                if d.is_dir() and d.name.startswith("sink_")
+            ])
+
+            # Read sink catalog for stellar properties
+            import csv as csv_mod
+            catalog_path = subbox_base / "sink_catalog.csv"
+            sink_catalog = {}
+            if catalog_path.exists():
+                with open(catalog_path, "r") as cf:
+                    reader = csv_mod.DictReader(cf)
+                    for row in reader:
+                        sink_catalog[row["folder"]] = row
+
+            # Read full sink data for stellar property computation
+            from radprocess.constants.constants import (
+                Ggram, M_sun, L_sun, R_sun, sigma,
+            )
+            sinks = ramses.read.sink_info(ramses_dir)
+            cols = sinks.columns
+            m_col = cols.index("M[Msol]")
+            accrate_col = cols.index("acc_rate[Msol/y]")
+            acclum_col = cols.index("acc_lum[Lsol]")
+            intlum_col = cols.index("int_lum[Lsol]")
+            teff_col = cols.index("Teff[K]")
+            sec_yr = 365.25 * 24 * 3600
+
+            print(f"\nDistributing shared files to {len(sink_dirs)} subbox folders...")
+            for sink_dir in sink_dirs:
+                # Copy shared files
+                for src in shared_files:
+                    if src.exists():
+                        dst = sink_dir / src.name
+                        shutil.copy2(src, dst)
+
+                # Write per-sink stars.inp
+                folder_name = sink_dir.name
+                if folder_name in sink_catalog:
+                    row_idx = int(sink_catalog[folder_name]["row_idx"])
+
+                    sink_mass_g = sinks.data[row_idx, m_col] * M_sun
+                    lacc = sinks.data[row_idx, acclum_col] * L_sun
+                    lint = sinks.data[row_idx, intlum_col] * L_sun
+                    ltot = lint + lacc
+                    teff_K = sinks.data[row_idx, teff_col]
+
+                    if lacc > 0 and teff_K > 0:
+                        sink_radius_cm = np.sqrt(
+                            ltot / (4 * np.pi * sigma * teff_K**4)
+                        )
+                    else:
+                        sink_radius_cm = 1.0 * R_sun
+
+                    if teff_K <= 0:
+                        teff_K = 5e3
+
+                    filepath = sink_dir / "stars.inp"
+                    with open(filepath, "w") as sf:
+                        sf.write("2\n")
+                        sf.write(f"1 {len(wavelengths)}\n")
+                        sf.write(
+                            f"{sink_radius_cm:.6e} {sink_mass_g:.6e} "
+                            f"0.000000e+00 0.000000e+00 0.000000e+00\n"
+                        )
+                        for w in wavelengths:
+                            sf.write(f"{w:e}\n")
+                        sf.write(f"-{teff_K:e}\n")
+
+                print(f"    {sink_dir.name}: OK")
+
+            print(f"Shared files + per-sink stars.inp distributed to all subboxes.\n")
+
+        return result
+
+    def run_radmc3d_mctherm(self, radmc3d_binary="radmc3d", subbox=None):
         """
         Execute ``radmc3d mctherm`` to compute the dust temperature (Step 6).
 
-        All input files must already exist in the RADMC-3D output directory
-        (from Steps 3 and 5).
+        All input files must already exist in the target directory
+        (from Steps 3 and 5, and distribute via prepare_radmc3d_inputs
+        with subbox=True).
 
         Parameters
         ----------
         radmc3d_binary : str
             Name or path of the RADMC-3D executable.
+        subbox : None, str, list of str, or "all"
+            Which directory to run mctherm in:
+            - None: run on the main radmc3d/ directory (full cloud).
+            - "sink_0042": run on a single subbox.
+            - ["sink_0003", "sink_0007"]: run on a list of subboxes.
+            - "all": run on all subbox folders found in radmc3d/subboxes/.
 
         Returns
         -------
-        temp_file : Path
-            Path to the dust_temperature.bdat output file.
+        result : Path or dict
+            If subbox is None or a single string: Path to dust_temperature file.
+            If subbox is a list or "all": dict {sink_name: Path} for each.
         """
         from radprocess.radmc3d.run import mctherm
 
         radmc_dir = self.radmc_outputs_dir
 
-        # Infer output number for the log filename
-        root = self.get_amr_root()
-        output_num = int(root.attrs.get("ramses_output_num", 0))
-        log_path = radmc_dir / f"radmc3d_mctherm_{output_num:05d}.log"
+        # No subbox: run on the main directory (original behavior)
+        if subbox is None:
+            root = self.get_amr_root()
+            output_num = int(root.attrs.get("ramses_output_num", 0))
+            log_path = radmc_dir / f"radmc3d_mctherm_{output_num:05d}.log"
 
-        temp_file = mctherm(
-            radmc_dir=radmc_dir,
-            log_path=log_path,
-            radmc3d_binary=radmc3d_binary,
-        )
+            return mctherm(
+                radmc_dir=radmc_dir,
+                log_path=log_path,
+                radmc3d_binary=radmc3d_binary,
+            )
 
-        return temp_file
+        # Resolve subbox list
+        subbox_base = radmc_dir / "subboxes"
+        if not subbox_base.exists():
+            raise FileNotFoundError(
+                f"Subbox directory not found: {subbox_base}. "
+                "Run convert_subboxes(which_rad='radmc') first."
+            )
 
-    def merge_temperature(self, n_dust=None):
+        if subbox == "all":
+            sink_names = sorted([
+                d.name for d in subbox_base.iterdir()
+                if d.is_dir() and d.name.startswith("sink_")
+            ])
+        elif isinstance(subbox, str):
+            sink_names = [subbox]
+        elif isinstance(subbox, list):
+            sink_names = subbox
+        else:
+            raise ValueError(
+                f"subbox must be None, 'all', a string, or a list of strings, "
+                f"got {type(subbox)}"
+            )
+
+        if not sink_names:
+            raise RuntimeError("No subbox folders found.")
+
+        print(f"\nRunning mctherm on {len(sink_names)} subbox(es)...\n")
+
+        results = {}
+        for i, name in enumerate(sink_names):
+            sink_dir = subbox_base / name
+            if not sink_dir.exists():
+                print(f"WARNING: {sink_dir} not found, skipping.")
+                continue
+
+            print(f"{'='*60}")
+            print(f"  mctherm: {name}  ({i+1}/{len(sink_names)})")
+            print(f"{'='*60}")
+
+            log_path = sink_dir / "radmc3d_mctherm.log"
+
+            temp_file = mctherm(
+                radmc_dir=sink_dir,
+                log_path=log_path,
+                radmc3d_binary=radmc3d_binary,
+            )
+            results[name] = temp_file
+
+        print(f"\nAll mctherm runs completed: {len(results)}/{len(sink_names)} succeeded.\n")
+
+        # If single subbox was passed as string, return just the path
+        if isinstance(subbox, str) and subbox != "all":
+            return results.get(subbox)
+
+        return results
+
+    def merge_temperature(self, n_dust=None, subbox=None):
         """
-        Merge RADMC-3D dust temperatures into the POLARIS grid (Step 7).
+        Merge RADMC-3D dust temperatures into the POLARIS grid (Step 7/8).
 
-        Reads the POLARIS grid_temp.dat (from Step 4) and the RADMC-3D
-        dust_temperature.bdat (from Step 6), replaces the POLARIS dust
-        temperatures with the RADMC-3D values, and writes the result as
-        grid_temp.radmc3d.dat in the POLARIS output directory.
+        For the full-cloud case (subbox=None):
+            Reads the POLARIS grid_temp.dat (from Step 4) and the RADMC-3D
+            dust_temperature.bdat (from Step 6), replaces the POLARIS dust
+            temperatures with the RADMC-3D values, and writes the result as
+            grid_temp.radmc3d.dat in the POLARIS output directory.
+
+        For subboxes:
+            For each subbox, reads the POLARIS subbox grid
+            (ramses_grid_sink_XXXX.dat) and the RADMC-3D temperature
+            (dust_temperature.bdat), injects the dust temperatures as
+            new parameters (ID=2), and writes grid_temp.radmc3d.dat
+            in the POLARIS subbox directory.
 
         Parameters
         ----------
         n_dust : int or None
-            Number of dust species. If None, auto-detected from the
-            RAMSES info file.
+            Number of dust species. If None, auto-detected.
+        subbox : None, str, list of str, or "all"
+            - None: merge on the main directories (full cloud).
+            - "sink_0042": merge a single subbox.
+            - ["sink_0003", "sink_0007"]: merge a list of subboxes.
+            - "all": merge all subbox folders.
 
         Returns
         -------
-        merged_grid : Path
-            Path to the merged grid file (grid_temp.radmc3d.dat).
+        result : Path or dict
+            If subbox is None or a single string: Path to merged grid.
+            If subbox is a list or "all": dict {sink_name: Path}.
         """
-        from radprocess.polaris.merge import merge_radmc3d_temperature
+        from radprocess.polaris.merge import merge_radmc3d_temperature, merge_temperature_into_grid
 
         ramses_dir = self.configparams.dir.ramses_output
         polaris_dir = self.polaris_outputs_dir
         radmc_dir = self.radmc_outputs_dir
 
-        return merge_radmc3d_temperature(
-            polaris_dir=polaris_dir,
-            radmc_dir=radmc_dir,
-            n_dust=n_dust,
-            ramses_dir=ramses_dir,
-        )
+        # Full-cloud case
+        if subbox is None:
+            return merge_radmc3d_temperature(
+                polaris_dir=polaris_dir,
+                radmc_dir=radmc_dir,
+                n_dust=n_dust,
+                ramses_dir=ramses_dir,
+            )
+
+        # Resolve subbox list
+        polaris_subbox_base = polaris_dir / "subboxes"
+        radmc_subbox_base = radmc_dir / "subboxes"
+
+        if not polaris_subbox_base.exists():
+            raise FileNotFoundError(
+                f"POLARIS subbox directory not found: {polaris_subbox_base}. "
+                "Run convert_subboxes(which_rad='polaris') first."
+            )
+        if not radmc_subbox_base.exists():
+            raise FileNotFoundError(
+                f"RADMC-3D subbox directory not found: {radmc_subbox_base}. "
+                "Run convert_subboxes(which_rad='radmc') first."
+            )
+
+        if subbox == "all":
+            sink_names = sorted([
+                d.name for d in polaris_subbox_base.iterdir()
+                if d.is_dir() and d.name.startswith("sink_")
+            ])
+        elif isinstance(subbox, str):
+            sink_names = [subbox]
+        elif isinstance(subbox, list):
+            sink_names = subbox
+        else:
+            raise ValueError(
+                f"subbox must be None, 'all', a string, or a list of strings, "
+                f"got {type(subbox)}"
+            )
+
+        # Auto-detect n_dust
+        if n_dust is None:
+            root = self.get_amr_root()
+            if "dust_massdensities" in root:
+                n_dust = np.array(root["dust_massdensities"]).shape[1]
+            elif "dust_massdensity" in root:
+                arr = np.array(root["dust_massdensity"])
+                n_dust = arr.shape[1] if arr.ndim > 1 else 1
+            else:
+                n_dust = 1
+            print(f"Auto-detected {n_dust} dust species.\n")
+
+        print(f"\nMerging temperatures for {len(sink_names)} subbox(es)...\n")
+
+        results = {}
+        for i, name in enumerate(sink_names):
+            polaris_sink_dir = polaris_subbox_base / name
+            radmc_sink_dir = radmc_subbox_base / name
+
+            if not polaris_sink_dir.exists():
+                print(f"WARNING: POLARIS subbox {polaris_sink_dir} not found, skipping.")
+                continue
+            if not radmc_sink_dir.exists():
+                print(f"WARNING: RADMC-3D subbox {radmc_sink_dir} not found, skipping.")
+                continue
+
+            # Find POLARIS grid
+            polaris_grids = list(polaris_sink_dir.glob("ramses_grid_sink_*.dat"))
+            if not polaris_grids:
+                print(f"WARNING: No POLARIS grid found in {polaris_sink_dir}, skipping.")
+                continue
+            polaris_grid_file = polaris_grids[0]
+
+            # Find RADMC-3D temperature
+            radmc_temp_file = radmc_sink_dir / "dust_temperature.bdat"
+            if not radmc_temp_file.exists():
+                radmc_temp_file = radmc_sink_dir / "dust_temperature.dat"
+            if not radmc_temp_file.exists():
+                print(f"WARNING: No temperature file in {radmc_sink_dir}, skipping.")
+                continue
+
+            output_file = polaris_sink_dir / "grid_temp.radmc3d.dat"
+
+            print(f"{'='*60}")
+            print(f"  Merging: {name}  ({i+1}/{len(sink_names)})")
+            print(f"{'='*60}")
+
+            merged, n_cells = merge_temperature_into_grid(
+                polaris_grid_file=polaris_grid_file,
+                radmc_temp_file=radmc_temp_file,
+                output_file=output_file,
+                n_dust=n_dust,
+            )
+            results[name] = merged
+
+        print(f"\nAll merges completed: {len(results)}/{len(sink_names)} succeeded.\n")
+
+        if isinstance(subbox, str) and subbox != "all":
+            return results.get(subbox)
+
+        return results
 
     def render_images(
         self,

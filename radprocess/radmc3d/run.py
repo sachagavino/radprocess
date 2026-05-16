@@ -87,11 +87,13 @@ def mctherm(radmc_dir, log_path=None, radmc3d_binary="radmc3d"):
     )
 
     log_file = open(log_path, "w") if log_path else None
+    output_lines = []
 
     try:
         for line in process.stdout:
             sys.stdout.write(line)
             sys.stdout.flush()
+            output_lines.append(line)
             if log_file:
                 log_file.write(line.rstrip("\r\n") + "\n")
     finally:
@@ -99,8 +101,14 @@ def mctherm(radmc_dir, log_path=None, radmc3d_binary="radmc3d"):
             log_file.close()
 
     process.wait()
-    if process.returncode != 0:
-        raise subprocess.CalledProcessError(process.returncode, command)
+
+    # Check for errors (RADMC-3D may exit with code 0 even on abort)
+    output_text = "".join(output_lines)
+    if process.returncode != 0 or "ERROR" in output_text or "ABORTED" in output_text:
+        raise RuntimeError(
+            f"RADMC-3D mctherm failed in {radmc_dir}. "
+            f"Check the log file for details."
+        )
 
     # Find the output temperature file
     temp_bdat = radmc_dir / "dust_temperature.bdat"

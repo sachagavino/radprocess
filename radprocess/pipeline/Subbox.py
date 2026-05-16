@@ -121,7 +121,6 @@ def _extract_subbox(root, sink_idx, sinks, box_half_width_au, hole_au,
     """
     l_m = root.attrs.get("l_m")
     l_cm = root.attrs.get("l_cm")
-    nb_species = root.attrs.get("nb_species", 1)
 
     level = np.array(root["level"])
     x = np.array(root["x"])
@@ -132,9 +131,14 @@ def _extract_subbox(root, sink_idx, sinks, box_half_width_au, hole_au,
     if "dust_massdensities" in root:
         dust_massdensity = np.array(root["dust_massdensities"])
     elif "dust_massdensity" in root:
-        dust_massdensity = np.array(root["dust_massdensity"])[:, np.newaxis]
+        dust_massdensity = np.array(root["dust_massdensity"])
+        if dust_massdensity.ndim == 1:
+            dust_massdensity = dust_massdensity[:, np.newaxis]
     else:
         raise RuntimeError("No dust density field found in Zarr.")
+
+    # Derive nb_species from actual array shape, not from attrs
+    nb_species = dust_massdensity.shape[1]
 
     # Gas density (needed for POLARIS)
     gas_massdensity = None
@@ -380,32 +384,27 @@ def build_subbox_radmc(
     tree.writeOcTree_radmc(tree.root, grid, density)
     densityarray = np.array(density)
 
+    # The actual number of leaves may be larger than nb_cells_sub
+    # because empty branch nodes are padded with zero-density leaves
+    nb_leaves_actual = len(densityarray)
+
+    print(f"    Leaf cells (from Zarr): {nb_cells_sub}")
+    print(f"    Leaf cells (with padding): {nb_leaves_actual}")
+
     print("    Writing amr_grid.inp ...")
     radmc3d.write.amr_grid(
-        output_dir, grid, sub["max_level_local"], nb_cells_sub, l_box_cm,
+        output_dir, grid, sub["max_level_local"], nb_leaves_actual, l_box_cm,
         gridstyle=gridstyle, coordsystem=coordsystem,
     )
 
     print("    Writing dust_density.inp ...")
     radmc3d.write.dust_density(
-        output_dir, densityarray, nb_cells_sub, nb_species,
+        output_dir, densityarray, nb_leaves_actual, nb_species,
         gridstyle=gridstyle,
     )
 
-    lam = np.logspace(np.log10(lmin), np.log10(lmax), nlam)
-    star_pos_cm = np.array([[0.0, 0.0, 0.0]])
-
-    print("    Writing stars.inp ...")
-    radmc3d.write.stars(
-        output_dir, 1,
-        np.array([sub["sink_mass_g"]]),
-        star_pos_cm,
-        np.array([sub["sink_radius"]]),
-        lam,
-        np.array([sub["sink_teff"]]),
-    )
-
     print(f"    Sink {sink_idx} done (RADMC-3D) -> {output_dir}\n")
+    print(f"    NOTE: stars.inp will be written by prepare_radmc3d_inputs(subbox=True)")
     return grid, densityarray
 
 
@@ -525,6 +524,7 @@ def build_subbox_polaris(
         f.write(struct.pack("d", l_box))  # grid size in meters
 
         tree.cell_counter = 0
+        tree._n_data = data_len  # for empty leaf padding in subboxes
         tree.writeOcTree(f, tree.root)
 
     print(f"    Sink {sink_idx} done (POLARIS) -> {output_file}\n")

@@ -25,10 +25,14 @@ from radprocess.polaris.opacity import derive_stars_properties
 #  Convert POLARIS opacities to RADMC-3D format
 # ============================================================
 
-def convert_polaris_opacities(polaris_data_dir, radmc_dir, n_dust, skiprows=29):
+def convert_polaris_opacities(polaris_data_dir, radmc_dir, n_dust=None, skiprows=29):
     """
     Convert POLARIS dust_mixture_*.dat opacity files into RADMC-3D
     dustkappa_*.inp files.
+
+    Auto-detects the POLARIS output filenames, which may follow either:
+        - Old convention: dust_mixture_001.dat, dust_mixture_002.dat, ...
+        - New convention: dust_mixture_001_comp_001.dat, ...
 
     The POLARIS opacity table columns (after the header) are:
         wavelength [m], ..., kabs_x, kabs_y, ksca_x, ksca_y
@@ -44,34 +48,42 @@ def convert_polaris_opacities(polaris_data_dir, radmc_dir, n_dust, skiprows=29):
         Path to the POLARIS data/ directory containing dust_mixture_*.dat.
     radmc_dir : str or Path
         Output directory where dustkappa_*.inp files will be written.
-    n_dust : int
-        Number of dust species (size bins).
+    n_dust : int or None
+        Number of dust species. If None, auto-detected from files found.
     skiprows : int
         Number of header rows to skip in the POLARIS opacity files.
 
     Returns
     -------
     kappa_model_names : list of str
-        Model names (e.g. ['dust_mixture_001', ...]) used in dustopac.inp.
+        Model names used in dustopac.inp.
     """
     polaris_data_dir = Path(polaris_data_dir)
     radmc_dir = Path(radmc_dir)
     radmc_dir.mkdir(parents=True, exist_ok=True)
 
+    # Auto-detect POLARIS opacity files
+    polaris_files = sorted(polaris_data_dir.glob("dust_mixture_*.dat"))
+
+    if not polaris_files:
+        raise FileNotFoundError(
+            f"No dust_mixture_*.dat files found in {polaris_data_dir}. "
+            "Run the POLARIS opacity step first (Step 4)."
+        )
+
+    if n_dust is not None and len(polaris_files) != n_dust:
+        print(f"WARNING: Expected {n_dust} dust species but found "
+              f"{len(polaris_files)} opacity files. Using found files.")
+
     kappa_model_names = []
 
     print("  Converting POLARIS opacities to RADMC-3D format:")
 
-    for i in range(n_dust):
-        model_name = f"dust_mixture_{i + 1:03d}"
+    for polaris_file in polaris_files:
+        # Derive model name from filename (strip .dat)
+        model_name = polaris_file.stem  # e.g. "dust_mixture_001_comp_001"
         kappa_filename = f"dustkappa_{model_name}.inp"
         kappa_model_names.append(model_name)
-
-        polaris_file = polaris_data_dir / f"{model_name}.dat"
-        if not polaris_file.exists():
-            raise FileNotFoundError(
-                f"POLARIS opacity file not found: {polaris_file}"
-            )
 
         data = np.loadtxt(polaris_file, skiprows=skiprows)
 
@@ -81,14 +93,24 @@ def convert_polaris_opacities(polaris_data_dir, radmc_dir, n_dust, skiprows=29):
             f.write("2\n")
             f.write(f"{len(data)}\n")
 
+            ncols = data.shape[1]
+
             for row in data:
                 # Wavelength: m -> micron
                 wave_um = row[0] / 1e-6
 
-                # Orientation-averaged opacities: (2*kx + ky) / 3
-                # Then convert m^2/kg -> cm^2/g by multiplying by 10
-                kabs = (row[-4] * 2 + row[-3]) / 3 * 10.0
-                ksca = (row[-2] * 2 + row[-1]) / 3 * 10.0
+                if ncols >= 21:
+                    # New POLARIS format (21 columns):
+                    # cols 17,18 = avgKabs1, avgKabs2 [m^2/kg]
+                    # cols 19,20 = avgKsca1, avgKsca2 [m^2/kg]
+                    # Already mass opacities, convert m^2/kg -> cm^2/g (*10)
+                    kabs = (row[17] * 2 + row[18]) / 3 * 10.0
+                    ksca = (row[19] * 2 + row[20]) / 3 * 10.0
+                else:
+                    # Old POLARIS format (fewer columns):
+                    # Last 4 cols = kabs_x, kabs_y, ksca_x, ksca_y [m^2/kg]
+                    kabs = (row[-4] * 2 + row[-3]) / 3 * 10.0
+                    ksca = (row[-2] * 2 + row[-1]) / 3 * 10.0
 
                 f.write(f"{wave_um:e} {kabs:e} {ksca:e}\n")
 
@@ -269,7 +291,7 @@ def prepare_radmc3d_inputs(
     nphot=1_000_000,
     setthreads=8,
     scattering_mode=1,
-    polaris_skiprows=29,
+    polaris_skiprows=40,
 ):
     """
     Full Step 5: convert POLARIS opacities and write all remaining

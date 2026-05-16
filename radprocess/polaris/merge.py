@@ -313,3 +313,130 @@ def merge_radmc3d_temperature(
     )
 
     return merged_grid
+
+
+# ============================================================
+#  Merge for subbox grids (inject dust temperature)
+# ============================================================
+
+def merge_temperature_into_grid(
+    polaris_grid_file,
+    radmc_temp_file,
+    output_file,
+    n_dust,
+):
+    """
+    Inject RADMC-3D dust temperatures into a POLARIS subbox grid.
+
+    Unlike merge_temperature (which replaces existing ID=2 parameters),
+    this function adds new ID=2 (dust temperature) parameters to a grid
+    that doesn't have them yet (e.g., a raw subbox grid from
+    build_subbox_polaris).
+
+    The output grid has the original parameters plus n_dust new
+    dust temperature entries (ID=2) appended after the existing parameters.
+
+    Parameters
+    ----------
+    polaris_grid_file : str or Path
+        Path to the POLARIS subbox grid (ramses_grid_sink_XXXX.dat).
+    radmc_temp_file : str or Path
+        Path to the RADMC-3D dust_temperature.bdat file.
+    output_file : str or Path
+        Path to write the merged grid (grid_temp.radmc3d.dat).
+    n_dust : int
+        Number of dust species.
+
+    Returns
+    -------
+    output_file : Path
+    num_cells : int
+        Number of leaf cells processed.
+    """
+    polaris_grid_file = Path(polaris_grid_file)
+    radmc_temp_file = Path(radmc_temp_file)
+    output_file = Path(output_file)
+
+    # Load RADMC-3D temperatures
+    print(f"  Reading RADMC-3D temperatures from: {radmc_temp_file}")
+    temperatures = read_radmc3d_temperature(radmc_temp_file, n_dust)
+    num_leaf_cells = temperatures.shape[0]
+    print(f"    Loaded temperatures for {num_leaf_cells} cells, {n_dust} dust species.")
+    print(f"    T range: {temperatures.min():.1f} - {temperatures.max():.1f} K")
+
+    print(f"  Merging into: {output_file}")
+
+    leaf_index = 0
+
+    with open(polaris_grid_file, "rb") as in_f, \
+         open(output_file, "wb") as out_f:
+
+        # --- Header ---
+        # grid_id (uint16)
+        grid_id_buf = in_f.read(2)
+        out_f.write(grid_id_buf)
+
+        # n_param (uint16)
+        n_param_buf = in_f.read(2)
+        n_param_old = struct.unpack("H", n_param_buf)[0]
+
+        # New n_param: original + n_dust temperature parameters
+        n_param_new = n_param_old + n_dust
+        out_f.write(struct.pack("H", n_param_new))
+
+        # Read old parameter IDs
+        param_ids_buf = in_f.read(2 * n_param_old)
+        param_ids = list(struct.unpack("H" * n_param_old, param_ids_buf))
+
+        # Write old IDs + new dust temperature IDs (ID=2)
+        new_param_ids = param_ids + [2] * n_dust
+        for pid in new_param_ids:
+            out_f.write(struct.pack("H", pid))
+
+        print(f"    Original params: {param_ids}")
+        print(f"    Added {n_dust} dust temperature params (ID=2)")
+        print(f"    New param count: {n_param_new}")
+
+        # grid_size (float64)
+        grid_size = in_f.read(8)
+        out_f.write(grid_size)
+
+        # --- Octree traversal ---
+        while True:
+            # is_leaf (uint16)
+            buf = in_f.read(2)
+            if not buf or len(buf) < 2:
+                break
+            out_f.write(buf)
+            is_leaf = struct.unpack("H", buf)[0]
+
+            # level (uint16)
+            buf = in_f.read(2)
+            if not buf or len(buf) < 2:
+                break
+            out_f.write(buf)
+
+            if is_leaf == 1:
+                # Copy original data
+                for j in range(n_param_old):
+                    val_buf = in_f.read(4)
+                    out_f.write(val_buf)
+
+                # Append dust temperatures
+                if leaf_index < num_leaf_cells:
+                    for d in range(n_dust):
+                        out_f.write(struct.pack("f", temperatures[leaf_index, d]))
+                else:
+                    # Padding cell (from empty octree branches)
+                    for d in range(n_dust):
+                        out_f.write(struct.pack("f", 0.0))
+
+                leaf_index += 1
+
+                if leaf_index % 50000 == 0:
+                    print(f"    Processed {leaf_index}/{num_leaf_cells} cells...")
+
+    print(f"    Processed {leaf_index} leaf cells total.")
+    print(f"  Merged grid written: {output_file}\n")
+
+    return output_file, leaf_index

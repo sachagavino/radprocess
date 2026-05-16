@@ -105,6 +105,27 @@ class OcTree:
 
 
     def writeOcTree(self, file, cell):
+        """
+        Write the octree to a binary file in POLARIS format.
+        
+        Handles the case where branch nodes have children that were
+        never populated (e.g., in subbox extraction where not all 8
+        octants contain cells). Unpopulated children are written as
+        empty leaf cells.
+        """
+        # Handle None cells (should not happen, but defensive)
+        if cell is None:
+            return
+
+        # If this is a branch node but has no children, treat it as a leaf
+        # This happens in subbox extraction when an octant has no cells
+        if cell.isleaf == 0 and len(cell.branches) == 0:
+            cell.isleaf = 1
+            if len(cell.data) == 0:
+                # Write as empty leaf — need to know data length
+                # Use _n_data if available, otherwise skip
+                n_data = getattr(self, '_n_data', 0)
+                cell.data = [0.0] * n_data
 
         file.write(struct.pack("H", cell.isleaf))
         file.write(struct.pack("H", cell.level))   
@@ -127,6 +148,9 @@ class OcTree:
                 
     def checkOcTree(self, cell):
 
+        if cell is None:
+            return True
+
         if cell.isleaf == 1:    
             length = len(cell.data)
             
@@ -144,10 +168,12 @@ class OcTree:
             length = len(cell.branches)
             
             if length == 0:
-                return False
+                # Empty branch in subbox — this is OK, will be written as empty leaf
+                return True
             
             for i in range(8):
-                self.checkOcTree(cell.branches[i])                
+                if not self.checkOcTree(cell.branches[i]):
+                    return False
                 
         return True
                 

@@ -791,7 +791,8 @@ class Convert:
                     box_half_width_au=100.0, isolation_radius_au=100.0,
                     require_luminosity=True, boxlen_pc=None,
                     gridstyle="octtree", coordsystem="cartesian",
-                    lmin=1e-3, lmax=1e4, nlam=210, sink_indices=None):
+                    lmin=1e-3, lmax=1e4, nlam=210, sink_indices=None,
+                    min_cells=0):
         """
         Extract one subbox folder per isolated sink, in RADMC-3D or POLARIS format.
 
@@ -828,6 +829,9 @@ class Convert:
             Number of wavelength points. Only used for RADMC-3D.
         sink_indices : list of int or None
             If provided, skip filtering and process only these sinks.
+        min_cells : int
+            Minimum number of cells in the subbox for it to be processed.
+            Sinks with fewer cells are skipped (default 0 = no minimum).
 
         Returns
         -------
@@ -881,6 +885,7 @@ class Convert:
         base_dir.mkdir(parents=True, exist_ok=True)
 
         cols = sinks.columns
+        id_col = cols.index("Id")
         x_col = cols.index("x")
         y_col = cols.index("y")
         z_col = cols.index("z")
@@ -892,14 +897,15 @@ class Convert:
         with open(catalog_path, "w", newline="") as f:
             writer = csv.writer(f)
             writer.writerow([
-                "folder", "sink_idx",
+                "folder", "sink_id", "row_idx",
                 "x_pc", "y_pc", "z_pc",
                 "mass_msun", "acc_lum_lsun", "int_lum_lsun",
             ])
             for idx in keep:
-                folder_name = f"sink_{idx:04d}"
+                sink_id = int(sinks.data[idx, id_col])
+                folder_name = f"sink_{sink_id:04d}"
                 writer.writerow([
-                    folder_name, idx,
+                    folder_name, sink_id, idx,
                     sinks.data[idx, x_col],
                     sinks.data[idx, y_col],
                     sinks.data[idx, z_col],
@@ -912,13 +918,41 @@ class Convert:
 
         # Loop over sinks
         results = {}
+        skipped = 0
+
+        # Pre-compute centered coordinates and mask components for min_cells check
+        l_m = root.attrs.get("l_m")
+        x_all = np.array(root["x"]) - 0.5 * l_m
+        y_all = np.array(root["y"]) - 0.5 * l_m
+        z_all = np.array(root["z"]) - 0.5 * l_m
+
+        x_col = cols.index("x")
+        y_col = cols.index("y")
+        z_col = cols.index("z")
+        hw_m = box_half_width_au * au2m
 
         for i, idx in enumerate(keep):
+            sink_id = int(sinks.data[idx, id_col])
+
+            # Quick cell count check before expensive octree build
+            if min_cells > 0:
+                sink_pos_m = (sinks.data[idx, [x_col, y_col, z_col]] - boxlen_pc / 2.0) * pc2m
+                n_cells = int(np.sum(
+                    (np.abs(x_all - sink_pos_m[0]) <= hw_m) &
+                    (np.abs(y_all - sink_pos_m[1]) <= hw_m) &
+                    (np.abs(z_all - sink_pos_m[2]) <= hw_m)
+                ))
+                if n_cells < min_cells:
+                    print(f"\n  Skipping sink {sink_id}: only {n_cells} cells "
+                          f"(min_cells={min_cells})")
+                    skipped += 1
+                    continue
+
             print(f"\n{'='*60}")
-            print(f"  Processing sink {idx}  ({i+1}/{len(keep)})")
+            print(f"  Processing sink {sink_id}  ({i+1-skipped}/{len(keep)-skipped})")
             print(f"{'='*60}")
 
-            sink_dir = base_dir / f"sink_{idx:04d}"
+            sink_dir = base_dir / f"sink_{sink_id:04d}"
 
             if which_rad == "radmc":
                 result = build_subbox_radmc(
@@ -950,10 +984,12 @@ class Convert:
                     boxlen_pc=boxlen_pc,
                 )
 
-            results[idx] = result
+            results[sink_id] = result
 
         print(f"\n{'='*60}")
         print(f"  All done: {len(results)} subboxes written to {base_dir}")
+        if skipped > 0:
+            print(f"  Skipped: {skipped} sinks (fewer than {min_cells} cells)")
         print(f"{'='*60}\n")
 
         return results, catalog_path
