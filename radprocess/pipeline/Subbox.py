@@ -191,7 +191,7 @@ def _extract_subbox(root, sink_idx, sinks, box_half_width_au, hole_au,
         sink_teff = 5e3
 
     # ----------------------------------------------------------
-    # Spatial mask
+    # Compute box size and snap center to AMR grid
     # ----------------------------------------------------------
     hw_m = box_half_width_au * au2m
 
@@ -199,10 +199,27 @@ def _extract_subbox(root, sink_idx, sinks, box_half_width_au, hole_au,
     cy = y - 0.5 * l_m
     cz = z - 0.5 * l_m
 
+    # Determine the box size as a power-of-two fraction of the domain
+    l_box_raw = 2.0 * hw_m
+    k = int(np.floor(np.log2(l_m / l_box_raw)))
+    if k < 0:
+        k = 0
+    l_box = l_m / (2**k)
+    hw_actual = l_box / 2.0
+    level_offset = k
+
+    # Center the box on the sink position
+    snap_center_x = sink_pos_m[0]
+    snap_center_y = sink_pos_m[1]
+    snap_center_z = sink_pos_m[2]
+
+    # ----------------------------------------------------------
+    # Spatial mask (centered on the SNAPPED position, not the sink)
+    # ----------------------------------------------------------
     mask = (
-        (np.abs(cx - sink_pos_m[0]) <= hw_m) &
-        (np.abs(cy - sink_pos_m[1]) <= hw_m) &
-        (np.abs(cz - sink_pos_m[2]) <= hw_m)
+        (np.abs(cx - snap_center_x) <= hw_actual) &
+        (np.abs(cy - snap_center_y) <= hw_actual) &
+        (np.abs(cz - snap_center_z) <= hw_actual)
     )
 
     nb_cells_sub = int(mask.sum())
@@ -226,14 +243,6 @@ def _extract_subbox(root, sink_idx, sinks, box_half_width_au, hole_au,
     # ----------------------------------------------------------
     # Re-level
     # ----------------------------------------------------------
-    l_box_raw = 2.0 * hw_m
-
-    k = int(np.floor(np.log2(l_m / l_box_raw)))
-    if k < 0:
-        k = 0
-    l_box = l_m / (2**k)
-
-    level_offset = k
     sub_level_local = (sub_level - level_offset).astype(int)
 
     if sub_level_local.min() < 0:
@@ -241,17 +250,45 @@ def _extract_subbox(root, sink_idx, sinks, box_half_width_au, hole_au,
         level_offset = min_level_full
         k = min_level_full
         l_box = l_m / (2**k)
+        hw_actual = l_box / 2.0
         sub_level_local = (sub_level - level_offset).astype(int)
 
-    hw_actual = l_box / 2.0
+        # Re-center with new hw_actual
+        snap_center_x = sink_pos_m[0]
+        snap_center_y = sink_pos_m[1]
+        snap_center_z = sink_pos_m[2]
 
-    box_origin_x = sink_pos_m[0] - hw_actual
-    box_origin_y = sink_pos_m[1] - hw_actual
-    box_origin_z = sink_pos_m[2] - hw_actual
+        # Re-mask with new hw_actual
+        mask = (
+            (np.abs(cx - snap_center_x) <= hw_actual) &
+            (np.abs(cy - snap_center_y) <= hw_actual) &
+            (np.abs(cz - snap_center_z) <= hw_actual)
+        )
+        sub_cx = cx[mask]
+        sub_cy = cy[mask]
+        sub_cz = cz[mask]
+        sub_level = level[mask]
+        sub_level_local = (sub_level - level_offset).astype(int)
+        sub_dust = dust_massdensity[mask]
+        sub_gas = gas_massdensity[mask] if gas_massdensity is not None else None
+        sub_T = Tgas[mask] if Tgas is not None else None
+        sub_Bx = Bx[mask] if Bx is not None else None
+        sub_By = By[mask] if By is not None else None
+        sub_Bz = Bz[mask] if Bz is not None else None
+        nb_cells_sub = int(mask.sum())
+
+    box_origin_x = snap_center_x - hw_actual
+    box_origin_y = snap_center_y - hw_actual
+    box_origin_z = snap_center_z - hw_actual
 
     rel_x = sub_cx - box_origin_x
     rel_y = sub_cy - box_origin_y
     rel_z = sub_cz - box_origin_z
+
+    # The sink offset from box center (for star position in stars.inp)
+    sink_offset_x = sink_pos_m[0] - snap_center_x
+    sink_offset_y = sink_pos_m[1] - snap_center_y
+    sink_offset_z = sink_pos_m[2] - snap_center_z
 
     max_level_local = int(sub_level_local.max())
     min_level_local = int(sub_level_local.min())
@@ -259,6 +296,10 @@ def _extract_subbox(root, sink_idx, sinks, box_half_width_au, hole_au,
     print(f"\n--- Subbox for sink {sink_idx} ---")
     print(f"    Sink position (AU): "
           f"({sink_pos_m[0]/au2m:.1f}, {sink_pos_m[1]/au2m:.1f}, {sink_pos_m[2]/au2m:.1f})")
+    print(f"    Box center snapped (AU): "
+          f"({snap_center_x/au2m:.1f}, {snap_center_y/au2m:.1f}, {snap_center_z/au2m:.1f})")
+    print(f"    Sink offset from center (AU): "
+          f"({sink_offset_x/au2m:.1f}, {sink_offset_y/au2m:.1f}, {sink_offset_z/au2m:.1f})")
     print(f"    Requested half-width: {box_half_width_au} AU")
     print(f"    Actual subbox side:   {l_box/au2m:.1f} AU "
           f"(rounded to power-of-two fraction of domain)")
@@ -296,6 +337,8 @@ def _extract_subbox(root, sink_idx, sinks, box_half_width_au, hole_au,
         "sink_radius": sink_radius,
         "sink_teff": sink_teff,
         "hole_au": hole_au,
+        # Sink offset from box center (for star positioning)
+        "sink_offset_m": np.array([sink_offset_x, sink_offset_y, sink_offset_z]),
     }
 
 
@@ -405,6 +448,13 @@ def build_subbox_radmc(
 
     print(f"    Sink {sink_idx} done (RADMC-3D) -> {output_dir}\n")
     print(f"    NOTE: stars.inp will be written by prepare_radmc3d_inputs(subbox=True)")
+
+    # Save sink offset for stars.inp positioning
+    offset_file = output_dir / "sink_offset.txt"
+    offset_cm = sub["sink_offset_m"] * 100.0  # m -> cm (RADMC-3D uses CGS)
+    with open(offset_file, "w") as f:
+        f.write(f"{offset_cm[0]:.10e} {offset_cm[1]:.10e} {offset_cm[2]:.10e}\n")
+
     return grid, densityarray
 
 
@@ -528,4 +578,11 @@ def build_subbox_polaris(
         tree.writeOcTree(f, tree.root)
 
     print(f"    Sink {sink_idx} done (POLARIS) -> {output_file}\n")
+
+    # Save sink offset for source positioning (in metres for POLARIS)
+    offset_file = output_dir / "sink_offset.txt"
+    offset_m = sub["sink_offset_m"]
+    with open(offset_file, "w") as f:
+        f.write(f"{offset_m[0]:.10e} {offset_m[1]:.10e} {offset_m[2]:.10e}\n")
+
     return output_file

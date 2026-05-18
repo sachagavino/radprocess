@@ -827,13 +827,21 @@ class Pipeline:
                     if teff_K <= 0:
                         teff_K = 5e3
 
+                    # Read sink offset from box center (in cm for RADMC-3D)
+                    offset_file = sink_dir / "sink_offset.txt"
+                    if offset_file.exists():
+                        offset = np.loadtxt(offset_file)
+                        star_x, star_y, star_z = offset[0], offset[1], offset[2]
+                    else:
+                        star_x, star_y, star_z = 0.0, 0.0, 0.0
+
                     filepath = sink_dir / "stars.inp"
                     with open(filepath, "w") as sf:
                         sf.write("2\n")
                         sf.write(f"1 {len(wavelengths)}\n")
                         sf.write(
                             f"{sink_radius_cm:.6e} {sink_mass_g:.6e} "
-                            f"0.000000e+00 0.000000e+00 0.000000e+00\n"
+                            f"{star_x:.6e} {star_y:.6e} {star_z:.6e}\n"
                         )
                         for w in wavelengths:
                             sf.write(f"{w:e}\n")
@@ -1108,17 +1116,15 @@ class Pipeline:
         acceptance_angle=None,
         nr_photons_scat=None,
         source_star_scat=None,
+        subbox=None,
     ):
         """
-        Run POLARIS dust emission/scattering imaging (Step 8).
-
-        Renders images at the specified wavelengths and viewing angles
-        using the merged POLARIS grid (from Step 7).
+        Run POLARIS dust emission/scattering imaging.
 
         Parameters
         ----------
         dust_components : list of dict
-            Dust material definitions (same as for the opacity run).
+            Dust material definitions.
         npix : int
             Image resolution (npix x npix pixels).
         distance_pc : float
@@ -1126,21 +1132,19 @@ class Pipeline:
         wavelengths_mm : list of float
             Wavelengths to image in millimetres.
         views : list of str or None
-            Viewing angles to render (e.g. ["xy", "xz", "yz"]).
-            If None, renders all three standard views.
+            Viewing angles (e.g. ["xy", "xz", "yz"]).
         midplane_zoom : int or float
-            Midplane zoom factor (1 = full box, 10 = zoomed inner).
+            Midplane zoom factor.
         fov_m : float or None
-            Field of view in metres (half-width). If None, POLARIS uses
-            the full grid extent. Set this for zoomed/inner imaging.
+            Field of view in metres.
         label : str
-            Output subdirectory label ("whole" or "inner").
+            Output subdirectory label.
         grid_path : str or Path or None
             Path to the merged grid. If None, auto-detected.
         n_dust : int or None
-            Number of dust species. If None, auto-detected from RAMSES info.
+            Number of dust species.
         nr_threads : int or None
-            OpenMP threads (defaults to configparams.polaris.nr_threads).
+            OpenMP threads.
         dust_size_min, dust_size_max : float or None
             Grain size range in metres.
         dust_size_powerlaw : float or None
@@ -1150,37 +1154,38 @@ class Pipeline:
         mass_fraction : float or None
             Dust-to-gas mass fraction.
         polaris_binary : str or None
-            POLARIS executable name or path.
+            POLARIS executable.
         cleanup_views : bool
-            Remove previous image outputs before rendering.
+            Remove previous image outputs.
         polaris_cmd : str
-            POLARIS command: "CMD_DUST_EMISSION", "CMD_DUST_SCATTERING",
-            or both separated by a space.
+            POLARIS command.
         alignment : str
-            Grain alignment: "ALIG_PA", "ALIG_IDG", "ALIG_RAT",
-            "ALIG_INTERNAL", or "" for no alignment.
+            Grain alignment mechanism.
         peel_off : bool
-            Use peel-off technique for scattering.
+            Use peel-off technique.
         acceptance_angle : float or None
-            Acceptance angle for scattered light (degrees).
+            Acceptance angle for scattered light.
         nr_photons_scat : int or None
-            Number of photon packages for scattering Monte Carlo.
+            Photon packages for scattering MC.
         source_star_scat : list of dict or None
-            Stellar sources for scattering (pos_m, radius_rsun, temperature_k).
+            Stellar sources for scattering.
+        subbox : None, str, list of str, or "all"
+            - None: render full cloud.
+            - "sink_0042": single subbox.
+            - ["sink_0003", "sink_0007"]: list of subboxes.
+            - "all": all subboxes with merged grids.
 
         Returns
         -------
-        image_dirs : dict
-            {view_name: Path} for each rendered view.
+        result : dict
+            If subbox is None: {view_name: Path}.
+            If subbox is set: {sink_name: {view_name: Path}}.
         """
         from radprocess.polaris.imaging import render_images
-        from radprocess.polaris.opacity import _find_info_file, _read_ndust
 
         polaris_dir = self.polaris_outputs_dir
-        image_output_dir = Path(self.configparams.dir.pipeline_output) / "images"
         pc = self.configparams.polaris
 
-        # Defaults from config dataclass
         if dust_size_min is None:
             dust_size_min = pc.dust_size_min
         if dust_size_max is None:
@@ -1196,53 +1201,144 @@ class Pipeline:
         if polaris_binary is None:
             polaris_binary = pc.polaris_binary
 
-        # Auto-detect grid
-        if grid_path is None:
-            grid_path = polaris_dir / "grid_temp.radmc3d.dat"
-            if not grid_path.exists():
-                raise FileNotFoundError(
-                    f"Merged grid not found: {grid_path}. "
-                    "Run merge_temperature() first (Step 7)."
-                )
-
-        # Auto-detect n_dust
         if n_dust is None:
-            ramses_dir = self.configparams.dir.ramses_output
-            info_path = _find_info_file(ramses_dir)
-            n_dust = _read_ndust(info_path)
-            if n_dust == 0:
+            root = self.get_amr_root()
+            if "dust_massdensities" in root:
+                n_dust = np.array(root["dust_massdensities"]).shape[1]
+            elif "dust_massdensity" in root:
+                arr = np.array(root["dust_massdensity"])
+                n_dust = arr.shape[1] if arr.ndim > 1 else 1
+            else:
                 n_dust = 1
 
-        # Get output number for naming
         root = self.get_amr_root()
         output_num = int(root.attrs.get("ramses_output_num", 0))
 
-        return render_images(
-            polaris_dir=polaris_dir,
-            image_output_dir=image_output_dir,
-            grid_path=grid_path,
-            dust_components=dust_components,
-            n_dust=n_dust,
-            dust_size_min=dust_size_min,
-            dust_size_max=dust_size_max,
-            dust_size_powerlaw=dust_size_powerlaw,
-            mean_molecular_weight=mean_molecular_weight,
-            mass_fraction=mass_fraction,
-            npix=npix,
-            distance_pc=distance_pc,
-            wavelengths_mm=wavelengths_mm,
-            views=views,
-            nr_threads=nr_threads,
-            midplane_zoom=midplane_zoom,
-            fov_m=fov_m,
-            output_num=output_num,
-            polaris_binary=polaris_binary,
-            label=label,
-            cleanup_views=cleanup_views,
-            polaris_cmd=polaris_cmd,
-            alignment=alignment,
-            peel_off=peel_off,
-            acceptance_angle=acceptance_angle,
-            nr_photons_scat=nr_photons_scat,
-            source_star_scat=source_star_scat,
-        )
+        # ---- Full-cloud case ----
+        if subbox is None:
+            image_output_dir = Path(self.configparams.dir.pipeline_output) / "images"
+
+            if grid_path is None:
+                grid_path = polaris_dir / "grid_temp.radmc3d.dat"
+                if not grid_path.exists():
+                    raise FileNotFoundError(
+                        f"Merged grid not found: {grid_path}. "
+                        "Run merge_temperature() first."
+                    )
+
+            return render_images(
+                polaris_dir=polaris_dir,
+                image_output_dir=image_output_dir,
+                grid_path=grid_path,
+                dust_components=dust_components,
+                n_dust=n_dust,
+                dust_size_min=dust_size_min,
+                dust_size_max=dust_size_max,
+                dust_size_powerlaw=dust_size_powerlaw,
+                mean_molecular_weight=mean_molecular_weight,
+                mass_fraction=mass_fraction,
+                npix=npix,
+                distance_pc=distance_pc,
+                wavelengths_mm=wavelengths_mm,
+                views=views,
+                nr_threads=nr_threads,
+                midplane_zoom=midplane_zoom,
+                fov_m=fov_m,
+                output_num=output_num,
+                polaris_binary=polaris_binary,
+                label=label,
+                cleanup_views=cleanup_views,
+                polaris_cmd=polaris_cmd,
+                alignment=alignment,
+                peel_off=peel_off,
+                acceptance_angle=acceptance_angle,
+                nr_photons_scat=nr_photons_scat,
+                source_star_scat=source_star_scat,
+            )
+
+        # ---- Subbox case ----
+        polaris_subbox_base = polaris_dir / "subboxes"
+        if not polaris_subbox_base.exists():
+            raise FileNotFoundError(
+                f"POLARIS subbox directory not found: {polaris_subbox_base}. "
+                "Run convert_subboxes(which_rad='polaris') first."
+            )
+
+        if subbox == "all":
+            sink_names = sorted([
+                d.name for d in polaris_subbox_base.iterdir()
+                if d.is_dir() and d.name.startswith("sink_")
+                and (d / "grid_temp.radmc3d.dat").exists()
+            ])
+        elif isinstance(subbox, str):
+            sink_names = [subbox]
+        elif isinstance(subbox, list):
+            sink_names = subbox
+        else:
+            raise ValueError(
+                f"subbox must be None, 'all', a string, or a list, "
+                f"got {type(subbox)}"
+            )
+
+        if not sink_names:
+            raise RuntimeError("No subbox folders with merged grids found.")
+
+        print(f"\nRendering images for {len(sink_names)} subbox(es)...\n")
+
+        all_results = {}
+        for i, name in enumerate(sink_names):
+            polaris_sink_dir = polaris_subbox_base / name
+
+            if not polaris_sink_dir.exists():
+                print(f"WARNING: {polaris_sink_dir} not found, skipping.")
+                continue
+
+            sink_grid = polaris_sink_dir / "grid_temp.radmc3d.dat"
+            if not sink_grid.exists():
+                print(f"WARNING: No merged grid in {polaris_sink_dir}, skipping.")
+                continue
+
+            print(f"\n{'='*60}")
+            print(f"  Rendering: {name}  ({i+1}/{len(sink_names)})")
+            print(f"{'='*60}")
+
+            image_output_dir = Path(self.configparams.dir.pipeline_output) / "images" / "subboxes" / name
+
+            image_dirs = render_images(
+                polaris_dir=polaris_sink_dir,
+                image_output_dir=image_output_dir,
+                grid_path=sink_grid,
+                dust_components=dust_components,
+                n_dust=n_dust,
+                dust_size_min=dust_size_min,
+                dust_size_max=dust_size_max,
+                dust_size_powerlaw=dust_size_powerlaw,
+                mean_molecular_weight=mean_molecular_weight,
+                mass_fraction=mass_fraction,
+                npix=npix,
+                distance_pc=distance_pc,
+                wavelengths_mm=wavelengths_mm,
+                views=views,
+                nr_threads=nr_threads,
+                midplane_zoom=midplane_zoom,
+                fov_m=fov_m,
+                output_num=output_num,
+                polaris_binary=polaris_binary,
+                label=label,
+                cleanup_views=cleanup_views,
+                polaris_cmd=polaris_cmd,
+                alignment=alignment,
+                peel_off=peel_off,
+                acceptance_angle=acceptance_angle,
+                nr_photons_scat=nr_photons_scat,
+                source_star_scat=source_star_scat,
+            )
+
+            all_results[name] = image_dirs
+
+        print(f"\nAll rendering completed: {len(all_results)}/{len(sink_names)} succeeded.\n")
+
+        if isinstance(subbox, str) and subbox != "all":
+            return all_results.get(subbox)
+
+        return all_results
