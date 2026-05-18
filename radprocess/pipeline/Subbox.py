@@ -207,19 +207,41 @@ def _extract_subbox(root, sink_idx, sinks, box_half_width_au, hole_au,
     l_box = l_m / (2**k)
     hw_actual = l_box / 2.0
     level_offset = k
+    half_domain = l_m / 2.0
 
-    # Center the box on the sink position
-    snap_center_x = sink_pos_m[0]
-    snap_center_y = sink_pos_m[1]
-    snap_center_z = sink_pos_m[2]
+    # Snap the box origin to the global AMR grid at level k.
+    # This ensures RAMSES cell centers fall exactly on octree subdivision points.
+    # At level k, grid boundaries are at: -l_m/2 + n * l_box, n = 0..2^k.
+    desired_origin_x = sink_pos_m[0] - hw_actual
+    desired_origin_y = sink_pos_m[1] - hw_actual
+    desired_origin_z = sink_pos_m[2] - hw_actual
+
+    n_x = int(np.round((desired_origin_x + half_domain) / l_box))
+    n_y = int(np.round((desired_origin_y + half_domain) / l_box))
+    n_z = int(np.round((desired_origin_z + half_domain) / l_box))
+
+    n_max = 2**k - 1
+    n_x = max(0, min(n_x, n_max))
+    n_y = max(0, min(n_y, n_max))
+    n_z = max(0, min(n_z, n_max))
+
+    box_origin_x = -half_domain + n_x * l_box
+    box_origin_y = -half_domain + n_y * l_box
+    box_origin_z = -half_domain + n_z * l_box
+
+    snap_center_x = box_origin_x + hw_actual
+    snap_center_y = box_origin_y + hw_actual
+    snap_center_z = box_origin_z + hw_actual
 
     # ----------------------------------------------------------
-    # Spatial mask (centered on the SNAPPED position, not the sink)
+    # Spatial mask: select cells that fall within the snapped box.
+    # Use the box boundaries directly (not centered on sink).
+    # Strict < on upper bound to match octree's half-open intervals.
     # ----------------------------------------------------------
     mask = (
-        (np.abs(cx - snap_center_x) <= hw_actual) &
-        (np.abs(cy - snap_center_y) <= hw_actual) &
-        (np.abs(cz - snap_center_z) <= hw_actual)
+        (cx >= box_origin_x) & (cx < box_origin_x + l_box) &
+        (cy >= box_origin_y) & (cy < box_origin_y + l_box) &
+        (cz >= box_origin_z) & (cz < box_origin_z + l_box)
     )
 
     nb_cells_sub = int(mask.sum())
@@ -253,16 +275,33 @@ def _extract_subbox(root, sink_idx, sinks, box_half_width_au, hole_au,
         hw_actual = l_box / 2.0
         sub_level_local = (sub_level - level_offset).astype(int)
 
-        # Re-center with new hw_actual
-        snap_center_x = sink_pos_m[0]
-        snap_center_y = sink_pos_m[1]
-        snap_center_z = sink_pos_m[2]
+        # Re-snap with new k
+        desired_origin_x = sink_pos_m[0] - hw_actual
+        desired_origin_y = sink_pos_m[1] - hw_actual
+        desired_origin_z = sink_pos_m[2] - hw_actual
 
-        # Re-mask with new hw_actual
+        n_x = int(np.round((desired_origin_x + half_domain) / l_box))
+        n_y = int(np.round((desired_origin_y + half_domain) / l_box))
+        n_z = int(np.round((desired_origin_z + half_domain) / l_box))
+
+        n_max = 2**k - 1
+        n_x = max(0, min(n_x, n_max))
+        n_y = max(0, min(n_y, n_max))
+        n_z = max(0, min(n_z, n_max))
+
+        box_origin_x = -half_domain + n_x * l_box
+        box_origin_y = -half_domain + n_y * l_box
+        box_origin_z = -half_domain + n_z * l_box
+
+        snap_center_x = box_origin_x + hw_actual
+        snap_center_y = box_origin_y + hw_actual
+        snap_center_z = box_origin_z + hw_actual
+
+        # Re-mask with new box
         mask = (
-            (np.abs(cx - snap_center_x) <= hw_actual) &
-            (np.abs(cy - snap_center_y) <= hw_actual) &
-            (np.abs(cz - snap_center_z) <= hw_actual)
+            (cx >= box_origin_x) & (cx < box_origin_x + l_box) &
+            (cy >= box_origin_y) & (cy < box_origin_y + l_box) &
+            (cz >= box_origin_z) & (cz < box_origin_z + l_box)
         )
         sub_cx = cx[mask]
         sub_cy = cy[mask]

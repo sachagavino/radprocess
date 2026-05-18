@@ -17,8 +17,8 @@ The file INSTALL.md provides the full installation procedure. Alternatively, it 
 ## External requirements (not installable via pip):
 
 - RAMSES
-- RADMC3D
-- POLARIS
+- RADMC3D 2.0
+- POLARIS v4.13
 - PyMSES (see custom fork)
 
 ## Branches
