@@ -323,3 +323,192 @@ def density_midplane(root, plane="xy", field="gas", npix=512, log=True,
     plt.tight_layout()
     return fig
 
+
+# ============================================================
+#  Subbox dust density mosaic
+# ============================================================
+
+def _read_dust_density_subbox(filepath):
+    """
+    Read a RADMC-3D dust_density_subbox.out file.
+
+    Returns
+    -------
+    density : np.ndarray of shape (nx, ny, nz)
+        Dust density in g/cm^3 (Fortran ordering).
+    bounds : tuple
+        (xmin, xmax, ymin, ymax, zmin, zmax) in cm.
+    """
+    with open(filepath, "r") as f:
+        lines = f.readlines()
+
+    lines = [l.strip() for l in lines if l.strip() != ""]
+
+    # line 0: format number
+    # line 1: nx ny nz nrspec
+    nx, ny, nz, ndust = map(int, lines[1].split())
+
+    # line 2: xmin xmax ymin ymax zmin zmax
+    xmin, xmax, ymin, ymax, zmin, zmax = map(float, lines[2].split())
+    bounds = (xmin, xmax, ymin, ymax, zmin, zmax)
+
+    # Data starts at line 5
+    data = np.array([float(x) for x in lines[5:]])
+
+    expected_size = nx * ny * nz
+    if data.size != expected_size:
+        raise ValueError(
+            f"Expected {expected_size} values but found {data.size}"
+        )
+
+    density = data.reshape((nx, ny, nz), order="F")
+    return density, bounds
+
+
+def _project_density(density, axis="z"):
+    """
+    Column density projection along chosen axis.
+
+    Parameters
+    ----------
+    density : np.ndarray
+        3D density cube with shape (nx, ny, nz).
+    axis : str
+        'x', 'y', or 'z'.
+
+    Returns
+    -------
+    map2d : np.ndarray
+    """
+    axis_dict = {"x": 0, "y": 1, "z": 2}
+    if axis not in axis_dict:
+        raise ValueError("axis must be 'x', 'y', or 'z'")
+    return np.sum(density, axis=axis_dict[axis])
+
+
+def subbox_density_mosaic(
+    subbox_base_dir,
+    axis="z",
+    n_sinks=10,
+    vmin=None,
+    vmax=None,
+    log=True,
+    cmap="inferno",
+    figsize=None,
+    fontsize=16,
+    sink_folders=None,
+):
+    """
+    Plot a mosaic of projected dust column density maps from RADMC-3D
+    subbox regrid output, with a single shared colorbar.
+
+    Parameters
+    ----------
+    subbox_base_dir : str or Path
+        Path to radmc3d/subboxes/ containing sink_0XXX/ folders.
+    axis : str
+        Projection axis: "x", "y", or "z" (default "z").
+    n_sinks : int
+        Maximum number of sinks to plot (default 10).
+    vmin, vmax : float or None
+        Colorbar limits (applied to log10 values if log=True).
+    log : bool
+        If True, plot log10 of the column density (default True).
+    cmap : str
+        Matplotlib colormap (default "inferno").
+    figsize : tuple or None
+        Figure size. If None, auto-computed.
+    fontsize : int
+        Font size for titles and colorbar label (default 16).
+    sink_folders : list of str or None
+        If provided, only plot these specific folders.
+        Overrides n_sinks.
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+    """
+    from pathlib import Path
+
+    subbox_base_dir = Path(subbox_base_dir)
+
+    # Find sink folders with dust_density_subbox.out
+    if sink_folders is not None:
+        folders = []
+        for name in sink_folders:
+            d = subbox_base_dir / name
+            if (d / "dust_density_subbox.out").exists():
+                folders.append(d)
+            else:
+                print(f"WARNING: {d / 'dust_density_subbox.out'} not found, skipping.")
+    else:
+        folders = sorted([
+            d for d in subbox_base_dir.iterdir()
+            if d.is_dir() and d.name.startswith("sink_")
+            and (d / "dust_density_subbox.out").exists()
+        ])[:n_sinks]
+
+    if not folders:
+        raise FileNotFoundError(
+            f"No dust_density_subbox.out files found in {subbox_base_dir}."
+        )
+
+    n_plots = len(folders)
+    ncols = min(n_plots, 5)
+    nrows = math.ceil(n_plots / ncols)
+
+    if figsize is None:
+        figsize = (3.5 * ncols, 3.5 * nrows)
+
+    fig, axes = plt.subplots(
+        nrows, ncols,
+        figsize=figsize,
+        constrained_layout=True,
+    )
+    axes = np.atleast_1d(axes).ravel()
+
+    images = []
+
+    for i, folder in enumerate(folders):
+        filepath = folder / "dust_density_subbox.out"
+        density, bounds = _read_dust_density_subbox(filepath)
+
+        img = _project_density(density, axis=axis)
+
+        if log:
+            with np.errstate(invalid="ignore", divide="ignore"):
+                img = np.log10(img + 1e-99)
+
+        im = axes[i].imshow(
+            img.T,
+            origin="lower",
+            cmap=cmap,
+            vmin=vmin,
+            vmax=vmax,
+        )
+        images.append(im)
+
+        axes[i].set_title(folder.name, fontsize=fontsize, fontweight="bold")
+        axes[i].set_xticks([])
+        axes[i].set_yticks([])
+
+    # Hide unused axes
+    for j in range(n_plots, len(axes)):
+        axes[j].axis("off")
+
+    # Single shared colorbar
+    if log:
+        clabel = r"$\log_{10}(\Sigma_{\rm dust})$  [g/cm$^2$]"
+    else:
+        clabel = r"$\Sigma_{\rm dust}$  [g/cm$^2$]"
+
+    cbar = fig.colorbar(
+        images[0],
+        ax=axes.tolist(),
+        shrink=0.85,
+        pad=0.02,
+    )
+    cbar.set_label(clabel, fontsize=fontsize)
+    cbar.ax.tick_params(labelsize=fontsize - 2)
+
+    return fig
