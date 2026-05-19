@@ -42,7 +42,8 @@ class Convert:
                           has_velocity=False, 
                           has_ratio=False,
                           has_fluids=False,
-                          has_fluid_v=False):
+                          has_fluid_v=False,
+                          has_bfield=False):
         """
         args: the output list of RAMSES converted by PyMses. 
         output: RAMSES outputs cleanly stored in Zarr format for efficient use.
@@ -101,6 +102,17 @@ class Convert:
                 chunks=(50_000, 3),
                 compressors=[compressor],
             )
+
+        # --B-fields--
+        if has_bfield:
+            for component in ("Bx", "By", "Bz"):
+                arr = output[component]
+                root.create_array(
+                    component,
+                    data=arr,
+                    chunks=(100_000,),
+                    compressors=[compressor],
+                )
 
 
         if has_fluids:
@@ -301,6 +313,27 @@ class Convert:
                 cells["velocity"] * snap.info["unit_velocity"].express(C.m / C.s)
             )
 
+        #---BFIELD SECTION:---
+        if has_bfield:
+            # RAMSES uses Constrained Transport: B stored on left and right
+            # cell faces. Average the two to get a cell-centred value.
+            # Unit conversion: RAMSES code units → Gauss (CGS), as expected by POLARIS.
+            if "unit_mag" in snap.info:
+                unit_mag = snap.info["unit_mag"].express(C.Tesla) * 1e4  # T → Gauss
+            else:
+                # Fallback: derive from standard RAMSES units
+                # B_code = sqrt(4π * rho_code * v_code²)  [Gaussian CGS]
+                unit_density_cgs = snap.info["unit_density"].express(C.g_cc)
+                unit_velocity_cgs = snap.info["unit_velocity"].express(C.cm / C.s)
+                unit_mag = np.sqrt(4.0 * np.pi * unit_density_cgs) * unit_velocity_cgs
+
+            B_left  = cells["B_left"]  * unit_mag   # shape (N, 3)
+            B_right = cells["B_right"] * unit_mag   # shape (N, 3)
+            B_cell  = 0.5 * (B_left + B_right)
+            output["Bx"] = B_cell[:, 0]
+            output["By"] = B_cell[:, 1]
+            output["Bz"] = B_cell[:, 2]
+
         # #---FLUID VELOCITY SECTION:---
         # if has_fluid_v:
         #     output['fluid_v'] = fluid_cells['fluid_v']
@@ -341,7 +374,8 @@ class Convert:
                                  has_velocity=has_velocity, 
                                  has_ratio=has_ratio,
                                  has_fluids=has_fluids,
-                                 has_fluid_v=has_fluid_v)
+                                 has_fluid_v=has_fluid_v,
+                                 has_bfield=has_bfield)
 
 
         return root # will later be stored in the main Grid, then used to write RT files.
