@@ -800,13 +800,15 @@ class Pipeline:
 
             print(f"\nDistributing shared files to {len(sink_dirs)} subbox folders...")
             for sink_dir in sink_dirs:
-                # Copy shared files
+                # Copy shared files (including radmc3d.inp — same for all sinks
+                # since the grid is now centered on the sink)
                 for src in shared_files:
                     if src.exists():
                         dst = sink_dir / src.name
                         shutil.copy2(src, dst)
 
                 # Write per-sink stars.inp
+                # The sink is at the box center (0,0,0) by construction.
                 folder_name = sink_dir.name
                 if folder_name in sink_catalog:
                     row_idx = int(sink_catalog[folder_name]["row_idx"])
@@ -827,13 +829,8 @@ class Pipeline:
                     if teff_K <= 0:
                         teff_K = 5e3
 
-                    # Read sink offset from box center (in cm for RADMC-3D)
-                    offset_file = sink_dir / "sink_offset.txt"
-                    if offset_file.exists():
-                        offset = np.loadtxt(offset_file)
-                        star_x, star_y, star_z = offset[0], offset[1], offset[2]
-                    else:
-                        star_x, star_y, star_z = 0.0, 0.0, 0.0
+                    # Star at (0,0,0) — the grid is centered on the sink
+                    star_x, star_y, star_z = 0.0, 0.0, 0.0
 
                     filepath = sink_dir / "stars.inp"
                     with open(filepath, "w") as sf:

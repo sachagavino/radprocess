@@ -479,18 +479,37 @@ def subbox_density_mosaic(
             with np.errstate(invalid="ignore", divide="ignore"):
                 img = np.log10(img + 1e-99)
 
+        # Determine the 2D extent from the 3D bounds
+        # bounds = (xmin, xmax, ymin, ymax, zmin, zmax) in cm
+        xmin, xmax, ymin, ymax, zmin, zmax = bounds
+        au2cm_local = 1.495978707e13
+        if axis == "z":
+            ext = [xmin/au2cm_local, xmax/au2cm_local,
+                   ymin/au2cm_local, ymax/au2cm_local]
+        elif axis == "y":
+            ext = [xmin/au2cm_local, xmax/au2cm_local,
+                   zmin/au2cm_local, zmax/au2cm_local]
+        elif axis == "x":
+            ext = [ymin/au2cm_local, ymax/au2cm_local,
+                   zmin/au2cm_local, zmax/au2cm_local]
+        else:
+            ext = None
+
         im = axes[i].imshow(
             img.T,
             origin="lower",
+            extent=ext,
             cmap=cmap,
             vmin=vmin,
             vmax=vmax,
         )
         images.append(im)
 
+        # Mark the sink position at the grid center (0,0,0)
+        axes[i].plot(0, 0, "w+", ms=8, mew=1.5)
+
         axes[i].set_title(folder.name, fontsize=fontsize, fontweight="bold")
-        axes[i].set_xticks([])
-        axes[i].set_yticks([])
+        axes[i].tick_params(labelsize=fontsize - 4)
 
     # Hide unused axes
     for j in range(n_plots, len(axes)):

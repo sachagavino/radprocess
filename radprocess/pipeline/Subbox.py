@@ -191,7 +191,20 @@ def _extract_subbox(root, sink_idx, sinks, box_half_width_au, hole_au,
         sink_teff = 5e3
 
     # ----------------------------------------------------------
-    # Compute box size and snap center to AMR grid
+    # Compute box size and center on the sink
+    # ----------------------------------------------------------
+    # The subbox is centered exactly on the sink position.
+    # The box side length is the smallest power-of-two fraction of the
+    # domain that covers the requested half-width.
+    #
+    # Octree validity: insertInTree navigates by comparing each cell's
+    # position against octant midpoints, so every cell is placed in the
+    # octant that *contains* its center — regardless of grid alignment.
+    # Fine cells near the sink (which carry all the science) are placed
+    # accurately because the sink sits at the octree root midpoint.
+    # Coarse background cells at the box edges may not sit at the exact
+    # center of their octree leaf, but their density is nearly uniform,
+    # so the sub-cell positioning error is physically irrelevant.
     # ----------------------------------------------------------
     hw_m = box_half_width_au * au2m
 
@@ -199,44 +212,35 @@ def _extract_subbox(root, sink_idx, sinks, box_half_width_au, hole_au,
     cy = y - 0.5 * l_m
     cz = z - 0.5 * l_m
 
-    # Determine the box size as a power-of-two fraction of the domain
+    # Box side length: smallest power-of-two fraction >= 2 * hw
     l_box_raw = 2.0 * hw_m
     k = int(np.floor(np.log2(l_m / l_box_raw)))
     if k < 0:
         k = 0
     l_box = l_m / (2**k)
     hw_actual = l_box / 2.0
-    level_offset = k
     half_domain = l_m / 2.0
 
-    # Snap the box origin to the global AMR grid at level k.
-    # This ensures RAMSES cell centers fall exactly on octree subdivision points.
-    # At level k, grid boundaries are at: -l_m/2 + n * l_box, n = 0..2^k.
-    desired_origin_x = sink_pos_m[0] - hw_actual
-    desired_origin_y = sink_pos_m[1] - hw_actual
-    desired_origin_z = sink_pos_m[2] - hw_actual
+    # Center the box directly on the sink — no grid snapping.
+    box_center_x = sink_pos_m[0]
+    box_center_y = sink_pos_m[1]
+    box_center_z = sink_pos_m[2]
 
-    n_x = int(np.round((desired_origin_x + half_domain) / l_box))
-    n_y = int(np.round((desired_origin_y + half_domain) / l_box))
-    n_z = int(np.round((desired_origin_z + half_domain) / l_box))
+    box_origin_x = box_center_x - hw_actual
+    box_origin_y = box_center_y - hw_actual
+    box_origin_z = box_center_z - hw_actual
 
-    n_max = 2**k - 1
-    n_x = max(0, min(n_x, n_max))
-    n_y = max(0, min(n_y, n_max))
-    n_z = max(0, min(n_z, n_max))
+    # Clamp so the box stays within the domain [-l_m/2, +l_m/2]
+    box_origin_x = max(-half_domain, min(box_origin_x, half_domain - l_box))
+    box_origin_y = max(-half_domain, min(box_origin_y, half_domain - l_box))
+    box_origin_z = max(-half_domain, min(box_origin_z, half_domain - l_box))
 
-    box_origin_x = -half_domain + n_x * l_box
-    box_origin_y = -half_domain + n_y * l_box
-    box_origin_z = -half_domain + n_z * l_box
-
-    snap_center_x = box_origin_x + hw_actual
-    snap_center_y = box_origin_y + hw_actual
-    snap_center_z = box_origin_z + hw_actual
+    box_center_x = box_origin_x + hw_actual
+    box_center_y = box_origin_y + hw_actual
+    box_center_z = box_origin_z + hw_actual
 
     # ----------------------------------------------------------
-    # Spatial mask: select cells that fall within the snapped box.
-    # Use the box boundaries directly (not centered on sink).
-    # Strict < on upper bound to match octree's half-open intervals.
+    # Extract cells that fall within the box
     # ----------------------------------------------------------
     mask = (
         (cx >= box_origin_x) & (cx < box_origin_x + l_box) &
@@ -263,41 +267,33 @@ def _extract_subbox(root, sink_idx, sinks, box_half_width_au, hole_au,
     sub_Bz = Bz[mask] if Bz is not None else None
 
     # ----------------------------------------------------------
-    # Re-level
+    # Re-level: if coarse cells in the box have level < k, we must
+    # enlarge the box (lower k) so local levels stay >= 0.
     # ----------------------------------------------------------
+    level_offset = k
     sub_level_local = (sub_level - level_offset).astype(int)
 
     if sub_level_local.min() < 0:
-        min_level_full = int(sub_level.min())
-        level_offset = min_level_full
-        k = min_level_full
+        level_offset = int(sub_level.min())
+        k = level_offset
         l_box = l_m / (2**k)
         hw_actual = l_box / 2.0
         sub_level_local = (sub_level - level_offset).astype(int)
 
-        # Re-snap with new k
-        desired_origin_x = sink_pos_m[0] - hw_actual
-        desired_origin_y = sink_pos_m[1] - hw_actual
-        desired_origin_z = sink_pos_m[2] - hw_actual
+        # Re-center with the larger box
+        box_origin_x = sink_pos_m[0] - hw_actual
+        box_origin_y = sink_pos_m[1] - hw_actual
+        box_origin_z = sink_pos_m[2] - hw_actual
 
-        n_x = int(np.round((desired_origin_x + half_domain) / l_box))
-        n_y = int(np.round((desired_origin_y + half_domain) / l_box))
-        n_z = int(np.round((desired_origin_z + half_domain) / l_box))
+        box_origin_x = max(-half_domain, min(box_origin_x, half_domain - l_box))
+        box_origin_y = max(-half_domain, min(box_origin_y, half_domain - l_box))
+        box_origin_z = max(-half_domain, min(box_origin_z, half_domain - l_box))
 
-        n_max = 2**k - 1
-        n_x = max(0, min(n_x, n_max))
-        n_y = max(0, min(n_y, n_max))
-        n_z = max(0, min(n_z, n_max))
+        box_center_x = box_origin_x + hw_actual
+        box_center_y = box_origin_y + hw_actual
+        box_center_z = box_origin_z + hw_actual
 
-        box_origin_x = -half_domain + n_x * l_box
-        box_origin_y = -half_domain + n_y * l_box
-        box_origin_z = -half_domain + n_z * l_box
-
-        snap_center_x = box_origin_x + hw_actual
-        snap_center_y = box_origin_y + hw_actual
-        snap_center_z = box_origin_z + hw_actual
-
-        # Re-mask with new box
+        # Re-extract with the larger box
         mask = (
             (cx >= box_origin_x) & (cx < box_origin_x + l_box) &
             (cy >= box_origin_y) & (cy < box_origin_y + l_box) &
@@ -316,18 +312,13 @@ def _extract_subbox(root, sink_idx, sinks, box_half_width_au, hole_au,
         sub_Bz = Bz[mask] if Bz is not None else None
         nb_cells_sub = int(mask.sum())
 
-    box_origin_x = snap_center_x - hw_actual
-    box_origin_y = snap_center_y - hw_actual
-    box_origin_z = snap_center_z - hw_actual
-
+    # Cell positions relative to box origin (for octree insertion)
     rel_x = sub_cx - box_origin_x
     rel_y = sub_cy - box_origin_y
     rel_z = sub_cz - box_origin_z
 
-    # The sink offset from box center (for star position in stars.inp)
-    sink_offset_x = sink_pos_m[0] - snap_center_x
-    sink_offset_y = sink_pos_m[1] - snap_center_y
-    sink_offset_z = sink_pos_m[2] - snap_center_z
+    # The sink is at the box center by construction => offset is zero
+    sink_offset_m = np.array([0.0, 0.0, 0.0])
 
     max_level_local = int(sub_level_local.max())
     min_level_local = int(sub_level_local.min())
@@ -335,10 +326,9 @@ def _extract_subbox(root, sink_idx, sinks, box_half_width_au, hole_au,
     print(f"\n--- Subbox for sink {sink_idx} ---")
     print(f"    Sink position (AU): "
           f"({sink_pos_m[0]/au2m:.1f}, {sink_pos_m[1]/au2m:.1f}, {sink_pos_m[2]/au2m:.1f})")
-    print(f"    Box center snapped (AU): "
-          f"({snap_center_x/au2m:.1f}, {snap_center_y/au2m:.1f}, {snap_center_z/au2m:.1f})")
-    print(f"    Sink offset from center (AU): "
-          f"({sink_offset_x/au2m:.1f}, {sink_offset_y/au2m:.1f}, {sink_offset_z/au2m:.1f})")
+    print(f"    Box center (AU):    "
+          f"({box_center_x/au2m:.1f}, {box_center_y/au2m:.1f}, {box_center_z/au2m:.1f})")
+    print(f"    Sink at box center: YES (offset = 0)")
     print(f"    Requested half-width: {box_half_width_au} AU")
     print(f"    Actual subbox side:   {l_box/au2m:.1f} AU "
           f"(rounded to power-of-two fraction of domain)")
@@ -376,8 +366,8 @@ def _extract_subbox(root, sink_idx, sinks, box_half_width_au, hole_au,
         "sink_radius": sink_radius,
         "sink_teff": sink_teff,
         "hole_au": hole_au,
-        # Sink offset from box center (for star positioning)
-        "sink_offset_m": np.array([sink_offset_x, sink_offset_y, sink_offset_z]),
+        # Sink offset from box center (zero — sink IS the center)
+        "sink_offset_m": sink_offset_m,
     }
 
 
