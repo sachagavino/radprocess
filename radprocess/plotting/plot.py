@@ -505,8 +505,17 @@ def subbox_density_mosaic(
         )
         images.append(im)
 
-        # Mark the sink position at the grid center (0,0,0)
-        axes[i].plot(0, 0, "w+", ms=8, mew=1.5)
+        # Mark the sink position (read offset from grid center)
+        offset_file = folder / "sink_offset.txt"
+        if offset_file.exists():
+            offset = np.loadtxt(offset_file)
+            ox, oy, oz = offset / au2cm_local  # cm -> AU
+            if axis == "z":
+                axes[i].plot(ox, oy, "w+", ms=8, mew=1.5)
+            elif axis == "y":
+                axes[i].plot(ox, oz, "w+", ms=8, mew=1.5)
+            elif axis == "x":
+                axes[i].plot(oy, oz, "w+", ms=8, mew=1.5)
 
         axes[i].set_title(folder.name, fontsize=fontsize, fontweight="bold")
         axes[i].tick_params(labelsize=fontsize - 4)
