@@ -86,14 +86,31 @@ def convert_polaris_opacities(polaris_data_dir, radmc_dir, n_dust=None):
         kappa_filename = f"dustkappa_{model_name}.inp"
         kappa_model_names.append(model_name)
 
-        data = np.loadtxt(polaris_file, comments="#")
+        # Read data, skipping any line that is a comment (#), empty,
+        # or has fewer columns than the actual opacity table.
+        rows = []
+        n_header = 0
+        with open(polaris_file, "r") as pf:
+            for line in pf:
+                stripped = line.strip()
+                if not stripped or stripped.startswith("#"):
+                    n_header += 1
+                    continue
+                parts = stripped.split()
+                # Opacity data rows have many columns (≥5);
+                # skip stray metadata lines (1-2 columns)
+                if len(parts) < 5:
+                    n_header += 1
+                    continue
+                try:
+                    rows.append([float(p) for p in parts])
+                except ValueError:
+                    n_header += 1
+                    continue
 
-        n_header_skipped = sum(
-            1 for line in open(polaris_file)
-            if line.strip().startswith("#") or not line.strip()
-        )
-        print(f"    {polaris_file.name}: skipped {n_header_skipped} header lines, "
-              f"{len(data)} wavelength points")
+        data = np.array(rows)
+        print(f"    {polaris_file.name}: skipped {n_header} header lines, "
+              f"{len(data)} wavelength points, {data.shape[1]} columns")
 
         output_path = radmc_dir / kappa_filename
         with open(output_path, "w") as f:
