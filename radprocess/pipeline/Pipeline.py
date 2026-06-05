@@ -664,7 +664,6 @@ class Pipeline:
         nphot=None,
         setthreads=None,
         scattering_mode=None,
-        polaris_skiprows=40,
         subbox=False,
     ):
         """
@@ -690,8 +689,6 @@ class Pipeline:
             Number of OpenMP threads.
         scattering_mode : int or None
             Scattering mode (1 = isotropic).
-        polaris_skiprows : int
-            Header rows to skip in POLARIS opacity files.
         subbox : bool
             If True, after writing the shared files to the main radmc3d/
             directory, distribute them (dustkappa_*.inp, dustopac.inp,
@@ -746,7 +743,6 @@ class Pipeline:
             nphot=nphot,
             setthreads=setthreads,
             scattering_mode=scattering_mode,
-            polaris_skiprows=polaris_skiprows,
         )
 
         # Distribute shared files to subbox folders

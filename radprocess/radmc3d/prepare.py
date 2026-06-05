@@ -25,7 +25,7 @@ from radprocess.polaris.opacity import derive_stars_properties
 #  Convert POLARIS opacities to RADMC-3D format
 # ============================================================
 
-def convert_polaris_opacities(polaris_data_dir, radmc_dir, n_dust=None, skiprows=29):
+def convert_polaris_opacities(polaris_data_dir, radmc_dir, n_dust=None):
     """
     Convert POLARIS dust_mixture_*.dat opacity files into RADMC-3D
     dustkappa_*.inp files.
@@ -33,6 +33,9 @@ def convert_polaris_opacities(polaris_data_dir, radmc_dir, n_dust=None, skiprows
     Auto-detects the POLARIS output filenames, which may follow either:
         - Old convention: dust_mixture_001.dat, dust_mixture_002.dat, ...
         - New convention: dust_mixture_001_comp_001.dat, ...
+
+    Header lines are auto-detected (lines starting with '#' or that
+    cannot be parsed as numbers are skipped).
 
     The POLARIS opacity table columns (after the header) are:
         wavelength [m], ..., kabs_x, kabs_y, ksca_x, ksca_y
@@ -50,8 +53,6 @@ def convert_polaris_opacities(polaris_data_dir, radmc_dir, n_dust=None, skiprows
         Output directory where dustkappa_*.inp files will be written.
     n_dust : int or None
         Number of dust species. If None, auto-detected from files found.
-    skiprows : int
-        Number of header rows to skip in the POLARIS opacity files.
 
     Returns
     -------
@@ -85,7 +86,14 @@ def convert_polaris_opacities(polaris_data_dir, radmc_dir, n_dust=None, skiprows
         kappa_filename = f"dustkappa_{model_name}.inp"
         kappa_model_names.append(model_name)
 
-        data = np.loadtxt(polaris_file, skiprows=skiprows)
+        data = np.loadtxt(polaris_file, comments="#")
+
+        n_header_skipped = sum(
+            1 for line in open(polaris_file)
+            if line.strip().startswith("#") or not line.strip()
+        )
+        print(f"    {polaris_file.name}: skipped {n_header_skipped} header lines, "
+              f"{len(data)} wavelength points")
 
         output_path = radmc_dir / kappa_filename
         with open(output_path, "w") as f:
@@ -291,7 +299,6 @@ def prepare_radmc3d_inputs(
     nphot=1_000_000,
     setthreads=8,
     scattering_mode=1,
-    polaris_skiprows=40,
 ):
     """
     Full Step 5: convert POLARIS opacities and write all remaining
@@ -330,8 +337,6 @@ def prepare_radmc3d_inputs(
         Number of OpenMP threads.
     scattering_mode : int
         Scattering mode.
-    polaris_skiprows : int
-        Number of header rows to skip in POLARIS opacity files.
 
     Returns
     -------
@@ -360,7 +365,7 @@ def prepare_radmc3d_inputs(
 
     # 1) Convert POLARIS opacities -> dustkappa_*.inp
     kappa_names = convert_polaris_opacities(
-        polaris_data_dir, radmc_dir, n_dust, skiprows=polaris_skiprows,
+        polaris_data_dir, radmc_dir, n_dust,
     )
 
     # 2) dustopac.inp
