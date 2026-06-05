@@ -319,8 +319,7 @@ class Convert:
             # cell faces. Average the two to get a cell-centred value.
             # Unit conversion: RAMSES code units → Gauss (CGS), as expected by POLARIS.
             if "unit_mag" in snap.info:
-                # unit_mag = snap.info["unit_mag"].express(C.Tesla) * 1e4  # T → Gauss
-                unit_mag = snap.info["unit_mag"].express(C.Gauss)
+                unit_mag = snap.info["unit_mag"].express(C.Gauss)  # T → Gauss
             else:
                 # Fallback: derive from standard RAMSES units
                 # B_code = sqrt(4π * rho_code * v_code²)  [Gaussian CGS]
@@ -853,7 +852,8 @@ class Convert:
         require_luminosity : bool
             If True, skip sinks without luminosity data.
         boxlen_pc : float or None
-            RAMSES box size in pc. If None, derived from Zarr attrs.
+            DEPRECATED — kept for backward compatibility.
+            The RAMSES boxlen is now read from the info file automatically.
         gridstyle : str
             "octtree" (default) or "regular". Only used for RADMC-3D.
         coordsystem : str
@@ -889,11 +889,30 @@ class Convert:
         if sinks.num_sinks == 0:
             raise RuntimeError("No sinks found in this RAMSES output.")
 
-        if boxlen_pc is None:
-            l_m = root.attrs.get("l_m")
-            boxlen_pc = l_m / pc2m
+        # Read the RAMSES boxlen from the info file.
+        # Sink positions in the CSV are in RAMSES code units [0, boxlen].
+        # This must match how cell positions were stored in the Zarr
+        # (cells.points * boxlen * unit_l).
+        ramses_dir = Path(ramses_dir)
+        info_files = sorted(ramses_dir.glob("info_*.txt"))
+        if info_files:
+            with open(info_files[0], "r") as f:
+                for line in f:
+                    if "boxlen" in line and "=" in line:
+                        boxlen = float(line.split("=")[1])
+                        break
+                else:
+                    raise ValueError(f"'boxlen' not found in {info_files[0]}")
+        else:
+            raise FileNotFoundError(
+                f"No info_*.txt found in {ramses_dir}. "
+                f"Cannot determine RAMSES boxlen for sink position conversion."
+            )
 
-        print(f"Box length: {boxlen_pc:.6f} pc")
+        l_m = root.attrs.get("l_m")
+
+        print(f"RAMSES boxlen: {boxlen:.10f}")
+        print(f"Domain size:   {l_m:.6e} m = {l_m/au2m:.1f} AU")
         print(f"Total sinks in output: {sinks.num_sinks}")
         print(f"Output format: {which_rad.upper()}")
 
@@ -971,7 +990,7 @@ class Convert:
 
             # Quick cell count check before expensive octree build
             if min_cells > 0:
-                sink_pos_m = (sinks.data[idx, [x_col, y_col, z_col]] - boxlen_pc / 2.0) * pc2m
+                sink_pos_m = (sinks.data[idx, [x_col, y_col, z_col]] / boxlen - 0.5) * l_m
                 n_cells = int(np.sum(
                     (np.abs(x_all - sink_pos_m[0]) <= hw_m) &
                     (np.abs(y_all - sink_pos_m[1]) <= hw_m) &
@@ -999,7 +1018,7 @@ class Convert:
                     box_half_width_au=box_half_width_au,
                     hole_au=hole_au,
                     f_acc=f_acc,
-                    boxlen_pc=boxlen_pc,
+                    boxlen=boxlen,
                     gridstyle=gridstyle,
                     coordsystem=coordsystem,
                     lmin=lmin,
@@ -1016,7 +1035,7 @@ class Convert:
                     box_half_width_au=box_half_width_au,
                     hole_au=hole_au,
                     f_acc=f_acc,
-                    boxlen_pc=boxlen_pc,
+                    boxlen=boxlen,
                 )
 
             results[sink_id] = result

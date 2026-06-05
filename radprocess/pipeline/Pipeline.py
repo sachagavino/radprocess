@@ -800,15 +800,15 @@ class Pipeline:
 
             print(f"\nDistributing shared files to {len(sink_dirs)} subbox folders...")
             for sink_dir in sink_dirs:
-                # Copy shared files (including radmc3d.inp — same for all sinks
-                # since the grid is now centered on the sink)
+                # Copy shared files (except radmc3d.inp which is per-sink)
                 for src in shared_files:
                     if src.exists():
+                        if src.name == "radmc3d.inp":
+                            continue  # written per-sink below
                         dst = sink_dir / src.name
                         shutil.copy2(src, dst)
 
-                # Write per-sink stars.inp
-                # The sink is at the box center (0,0,0) by construction.
+                # Write per-sink stars.inp and radmc3d.inp
                 folder_name = sink_dir.name
                 if folder_name in sink_catalog:
                     row_idx = int(sink_catalog[folder_name]["row_idx"])
@@ -829,8 +829,13 @@ class Pipeline:
                     if teff_K <= 0:
                         teff_K = 5e3
 
-                    # Star at (0,0,0) — the grid is centered on the sink
-                    star_x, star_y, star_z = 0.0, 0.0, 0.0
+                    # Read sink offset from box center (in cm for RADMC-3D)
+                    offset_file = sink_dir / "sink_offset.txt"
+                    if offset_file.exists():
+                        offset = np.loadtxt(offset_file)
+                        star_x, star_y, star_z = offset[0], offset[1], offset[2]
+                    else:
+                        star_x, star_y, star_z = 0.0, 0.0, 0.0
 
                     filepath = sink_dir / "stars.inp"
                     with open(filepath, "w") as sf:
@@ -844,9 +849,63 @@ class Pipeline:
                             sf.write(f"{w:e}\n")
                         sf.write(f"-{teff_K:e}\n")
 
+                    # ---- Per-sink radmc3d.inp with subbox_* parameters ----
+                    # The grid is padded (bigger than requested FOV) so the
+                    # octree is artifact-free. The subbox_* parameters tell
+                    # RADMC-3D's subbox_regrid to output a cube centered on
+                    # the sink at the user's requested FOV.
+                    shared_radmc3d_inp = radmc_dir / "radmc3d.inp"
+                    if shared_radmc3d_inp.exists():
+                        with open(shared_radmc3d_inp, "r") as rf:
+                            base_content = rf.read()
+                    else:
+                        base_content = (
+                            f"nphot = {int(nphot)}\n"
+                            f"nphot_scat = {int(nphot)}\n"
+                            f"setthreads = {setthreads}\n"
+                            f"scattering_mode = {scattering_mode}\n"
+                            f"scattering_mode_max = {scattering_mode}\n"
+                            f"modified_random_walk = 1\n"
+                            f"rto_style = 3\n"
+                            f"rto_single = 1\n"
+                        )
+
+                    fov_file = sink_dir / "requested_hw_au.txt"
+                    subbox_lines = ""
+                    if fov_file.exists():
+                        from radprocess.constants.constants import au2cm
+                        req_hw_au = float(np.loadtxt(fov_file))
+                        req_hw_cm = req_hw_au * au2cm
+                        subbox_npix = 128
+
+                        # Center the regrid cube on the sink position
+                        sx0 = star_x - req_hw_cm
+                        sx1 = star_x + req_hw_cm
+                        sy0 = star_y - req_hw_cm
+                        sy1 = star_y + req_hw_cm
+                        sz0 = star_z - req_hw_cm
+                        sz1 = star_z + req_hw_cm
+
+                        subbox_lines = (
+                            f"subbox_nx = {subbox_npix}\n"
+                            f"subbox_ny = {subbox_npix}\n"
+                            f"subbox_nz = {subbox_npix}\n"
+                            f"subbox_x0 = {sx0:.6e}\n"
+                            f"subbox_x1 = {sx1:.6e}\n"
+                            f"subbox_y0 = {sy0:.6e}\n"
+                            f"subbox_y1 = {sy1:.6e}\n"
+                            f"subbox_z0 = {sz0:.6e}\n"
+                            f"subbox_z1 = {sz1:.6e}\n"
+                        )
+
+                    with open(sink_dir / "radmc3d.inp", "w") as rf:
+                        rf.write(base_content)
+                        if subbox_lines:
+                            rf.write(subbox_lines)
+
                 print(f"    {sink_dir.name}: OK")
 
-            print(f"Shared files + per-sink stars.inp distributed to all subboxes.\n")
+            print(f"Shared files + per-sink stars.inp + radmc3d.inp distributed.\n")
 
         return result
 
