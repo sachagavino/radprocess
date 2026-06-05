@@ -319,7 +319,8 @@ class Convert:
             # cell faces. Average the two to get a cell-centred value.
             # Unit conversion: RAMSES code units → Gauss (CGS), as expected by POLARIS.
             if "unit_mag" in snap.info:
-                unit_mag = snap.info["unit_mag"].express(C.Tesla) * 1e4  # T → Gauss
+                # unit_mag = snap.info["unit_mag"].express(C.Tesla) * 1e4  # T → Gauss
+                unit_mag = snap.info["unit_mag"].express(C.Gauss)
             else:
                 # Fallback: derive from standard RAMSES units
                 # B_code = sqrt(4π * rho_code * v_code²)  [Gaussian CGS]
@@ -727,10 +728,10 @@ class Convert:
         print("\nPOLARIS Octree parameters:")
         print(f"    Level (min, max)     : {min_level}, {max_level}")
         print(f"    Nr. of cells (actual): {nb_cells}")
-        print(f"    Length (min, max)     : {l_m/(2**max_level):.3e}, {l_m:.3e} m")
-        print(f"    Dust species          : {n_dust}")
-        print(f"    B-field               : {'yes' if has_bfield else 'zeros'}")
-        print(f"    Temperature           : {'from Zarr' if 'Tgas' in root else 'default 10 K'}\n")
+        print(f"    Length (min, max)    : {l_m/(2**max_level):.3e}, {l_m:.3e} m")
+        print(f"    Dust species         : {n_dust}")
+        print(f"    B-field              : {'yes' if has_bfield else 'zeros'}")
+        print(f"    Temperature          : {'from Zarr' if 'Tgas' in root else 'default 10 K'}\n")
 
         tree = OcTree(x_min, y_min, z_min, l_m)
         tree.nr_of_cells = nb_cells
