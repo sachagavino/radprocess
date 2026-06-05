@@ -112,10 +112,16 @@ def filter_sinks(sinks, isolation_radius_au=100.0, require_luminosity=True):
 # ============================================================
 
 def _extract_subbox(root, sink_idx, sinks, box_half_width_au, hole_au,
-                    f_acc, boxlen_pc):
+                    f_acc, boxlen):
     """
     Extract cells from the Zarr within a box around a sink, recenter,
     relevel, and compute sink stellar properties.
+
+    Parameters
+    ----------
+    boxlen : float
+        RAMSES boxlen from the info file (dimensionless code units).
+        Sink positions in the CSV are in [0, boxlen].
 
     Returns a dict with all the data needed by format-specific writers.
     """
@@ -173,9 +179,11 @@ def _extract_subbox(root, sink_idx, sinks, box_half_width_au, hole_au,
 
     sec_yr = 365.25 * 24 * 3600
 
-    sink_pos_pc = sinks.data[sink_idx, [x_col, y_col, z_col]]
-    sink_pos_centered_pc = sink_pos_pc - boxlen_pc / 2.0
-    sink_pos_m = sink_pos_centered_pc * pc2m
+    sink_pos_raw = sinks.data[sink_idx, [x_col, y_col, z_col]]
+    # Sink positions are in RAMSES code units [0, boxlen].
+    # Normalize to [0, 1], then scale to physical [0, l_m] and center.
+    # This matches how cell positions are stored: cells.points * l_m.
+    sink_pos_m = (sink_pos_raw / boxlen - 0.5) * l_m
 
     sink_mass_g = sinks.data[sink_idx, m_col] * M_sun
     acc_rate_g = sinks.data[sink_idx, accrate_col] * M_sun / sec_yr
@@ -407,7 +415,7 @@ def _extract_subbox(root, sink_idx, sinks, box_half_width_au, hole_au,
 
 def build_subbox_radmc(
     root, ramses_dir, output_dir, sink_idx, sinks,
-    box_half_width_au, hole_au, f_acc, boxlen_pc,
+    box_half_width_au, hole_au, f_acc, boxlen,
     gridstyle="octtree", coordsystem="cartesian",
     lmin=1e-3, lmax=1e4, nlam=210,
 ):
@@ -424,7 +432,7 @@ def build_subbox_radmc(
     box_half_width_au : float
     hole_au : float
     f_acc : float
-    boxlen_pc : float
+    boxlen : float
     gridstyle, coordsystem : str
     lmin, lmax : float
     nlam : int
@@ -438,7 +446,7 @@ def build_subbox_radmc(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     sub = _extract_subbox(root, sink_idx, sinks, box_half_width_au,
-                          hole_au, f_acc, boxlen_pc)
+                          hole_au, f_acc, boxlen)
 
     l_box = sub["l_box"]
     l_box_cm = l_box * 100.0
@@ -528,7 +536,7 @@ def build_subbox_radmc(
 
 def build_subbox_polaris(
     root, ramses_dir, output_dir, sink_idx, sinks,
-    box_half_width_au, hole_au, f_acc, boxlen_pc,
+    box_half_width_au, hole_au, f_acc, boxlen,
 ):
     """
     Extract a subbox around a sink and write a POLARIS binary grid file.
@@ -543,7 +551,7 @@ def build_subbox_polaris(
     box_half_width_au : float
     hole_au : float
     f_acc : float
-    boxlen_pc : float
+    boxlen : float
 
     Returns
     -------
@@ -555,7 +563,7 @@ def build_subbox_polaris(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     sub = _extract_subbox(root, sink_idx, sinks, box_half_width_au,
-                          hole_au, f_acc, boxlen_pc)
+                          hole_au, f_acc, boxlen)
 
     l_box = sub["l_box"]
     nb_cells_sub = sub["nb_cells_sub"]

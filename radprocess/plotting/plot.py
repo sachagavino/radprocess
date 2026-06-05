@@ -479,19 +479,29 @@ def subbox_density_mosaic(
             with np.errstate(invalid="ignore", divide="ignore"):
                 img = np.log10(img + 1e-99)
 
-        # Determine the 2D extent from the 3D bounds
+        # Determine the 2D extent from the 3D bounds, shifted to
+        # sink-centered coordinates so the sink is at (0,0) in all subplots.
         # bounds = (xmin, xmax, ymin, ymax, zmin, zmax) in cm
         xmin, xmax, ymin, ymax, zmin, zmax = bounds
         au2cm_local = 1.495978707e13
+
+        # Read the sink offset to shift coordinates
+        offset_file = folder / "sink_offset.txt"
+        if offset_file.exists():
+            offset = np.loadtxt(offset_file)
+            ox, oy, oz = offset  # in cm (RADMC-3D subboxes)
+        else:
+            ox, oy, oz = 0.0, 0.0, 0.0
+
         if axis == "z":
-            ext = [xmin/au2cm_local, xmax/au2cm_local,
-                   ymin/au2cm_local, ymax/au2cm_local]
+            ext = [(xmin - ox)/au2cm_local, (xmax - ox)/au2cm_local,
+                   (ymin - oy)/au2cm_local, (ymax - oy)/au2cm_local]
         elif axis == "y":
-            ext = [xmin/au2cm_local, xmax/au2cm_local,
-                   zmin/au2cm_local, zmax/au2cm_local]
+            ext = [(xmin - ox)/au2cm_local, (xmax - ox)/au2cm_local,
+                   (zmin - oz)/au2cm_local, (zmax - oz)/au2cm_local]
         elif axis == "x":
-            ext = [ymin/au2cm_local, ymax/au2cm_local,
-                   zmin/au2cm_local, zmax/au2cm_local]
+            ext = [(ymin - oy)/au2cm_local, (ymax - oy)/au2cm_local,
+                   (zmin - oz)/au2cm_local, (zmax - oz)/au2cm_local]
         else:
             ext = None
 
@@ -505,17 +515,8 @@ def subbox_density_mosaic(
         )
         images.append(im)
 
-        # Mark the sink position (read offset from grid center)
-        offset_file = folder / "sink_offset.txt"
-        if offset_file.exists():
-            offset = np.loadtxt(offset_file)
-            ox, oy, oz = offset / au2cm_local  # cm -> AU
-            if axis == "z":
-                axes[i].plot(ox, oy, "w+", ms=8, mew=1.5)
-            elif axis == "y":
-                axes[i].plot(ox, oz, "w+", ms=8, mew=1.5)
-            elif axis == "x":
-                axes[i].plot(oy, oz, "w+", ms=8, mew=1.5)
+        # Sink is at (0,0) in sink-centered coordinates
+        axes[i].plot(0, 0, "w+", ms=8, mew=1.5)
 
         axes[i].set_title(folder.name, fontsize=fontsize, fontweight="bold")
         axes[i].tick_params(labelsize=fontsize - 4)
