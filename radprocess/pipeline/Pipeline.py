@@ -1151,6 +1151,7 @@ class Pipeline:
         views=None,
         midplane_zoom=1,
         fov_m=None,
+        fov_au=None,
         label="whole",
         grid_path=None,
         n_dust=None,
@@ -1188,7 +1189,11 @@ class Pipeline:
         midplane_zoom : int or float
             Midplane zoom factor.
         fov_m : float or None
-            Field of view in metres.
+            Field of view in metres (full width). Overridden by fov_au if set.
+        fov_au : float or None
+            Field of view in AU (full width). For subboxes, use the same
+            value as the RADMC-3D regrid box_au (e.g., 1000 for ±500 AU).
+            Converted to metres and passed to POLARIS.
         label : str
             Output subdirectory label.
         grid_path : str or Path or None
@@ -1356,6 +1361,30 @@ class Pipeline:
 
             image_output_dir = Path(self.configparams.dir.pipeline_output) / "images" / "subboxes" / name
 
+            # Read sink offset (in metres) for detector centering
+            sink_offset_m = None
+            offset_file = polaris_sink_dir / "sink_offset.txt"
+            if offset_file.exists():
+                sink_offset_m = np.loadtxt(offset_file).tolist()
+
+            # Determine the FOV for this subbox
+            from radprocess.constants.constants import au2m as _au2m
+            if fov_au is not None:
+                subbox_fov_m = fov_au * _au2m
+            elif fov_m is not None:
+                subbox_fov_m = fov_m
+            else:
+                # Fall back to the requested half-width from extraction
+                fov_file = polaris_sink_dir / "requested_hw_au.txt"
+                if fov_file.exists():
+                    req_hw_au = float(np.loadtxt(fov_file))
+                    subbox_fov_m = req_hw_au * _au2m * 2.0
+                else:
+                    subbox_fov_m = None
+
+            if subbox_fov_m is not None:
+                print(f"    FOV: {subbox_fov_m / _au2m:.0f} AU, centered on sink")
+
             image_dirs = render_images(
                 polaris_dir=polaris_sink_dir,
                 image_output_dir=image_output_dir,
@@ -1373,7 +1402,7 @@ class Pipeline:
                 views=views,
                 nr_threads=nr_threads,
                 midplane_zoom=midplane_zoom,
-                fov_m=fov_m,
+                fov_m=subbox_fov_m,
                 output_num=output_num,
                 polaris_binary=polaris_binary,
                 label=label,
@@ -1384,6 +1413,7 @@ class Pipeline:
                 acceptance_angle=acceptance_angle,
                 nr_photons_scat=nr_photons_scat,
                 source_star_scat=source_star_scat,
+                detector_shift_m=sink_offset_m,
             )
 
             all_results[name] = image_dirs

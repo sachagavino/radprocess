@@ -444,7 +444,12 @@ class Convert:
         data      = sinks.data
 
         #!!!!!!!TEMPORARY, DEFINE STARS PROPERTIES HERE, will change later.
-        boxlen_pc =  0.169154432386102 #pc
+        info_files = sorted(Path(ramses_dir).glob("info_*.txt"))
+        for line in open(info_files[0]):
+            if "boxlen" in line and "=" in line:
+                boxlen = float(line.split("=")[1])
+                break
+                
         lmin = 1e-3
         lmax = 1e4
         nlam = 210
@@ -464,7 +469,8 @@ class Convert:
             intlum_idx = sinks.columns.index("int_lum[Lsol]")
             
             sec_yr = 365*24*60*60
-            sink_positions  = (sinks.data[:, [x_idx, y_idx, z_idx]]- boxlen_pc / 2.0)
+            #sink_positions  = (sinks.data[:, [x_idx, y_idx, z_idx]]- boxlen_pc / 2.0)
+            sink_positions_m = (sinks.data[:, [x_idx, y_idx, z_idx]] / boxlen - 0.5) * l_m
             sink_masses     = sinks.data[:, m_idx]*M_sun
             acc_rate        = sinks.data[:, accrate_idx]*M_sun/sec_yr
             lint            = sinks.data[:, intlum_idx]*L_sun
@@ -501,12 +507,11 @@ class Convert:
             cell_dust_density = dust_massdensity[i, :].copy() #dust_massdensity[i, :].copy()
 
             if sinks.num_sinks > 0:
-                for star_pos in sink_positions:
-                    # Calculate distance from the cell to the current star.
+                for star_pos_m in sink_positions_m:
                     d2 = (
-                        (c_x - star_pos[0]*pc2m)**2 +
-                        (c_y - star_pos[1]*pc2m)**2 +
-                        (c_z - star_pos[2]*pc2m)**2
+                        (c_x - star_pos_m[0])**2 +
+                        (c_y - star_pos_m[1])**2 +
+                        (c_z - star_pos_m[2])**2
                     )
                     # If the cell is within the hole radius, set densities to zero.
                     if d2 <= hole_radius2:
