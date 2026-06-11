@@ -29,10 +29,10 @@ working directory where radprocess will write all intermediate and final files.
 .. code-block:: python
 
     # RAMSES simulation output
-    pipe.configparams.ramsesoutput.ramses_output_dir = "/data/outputs/Mass500/output_00940/"
+    pipe.configparams.dir.ramses_output = "/data/outputs/Mass500/output_00940/"
 
     # Working directory (created automatically with subdirectories)
-    pipe.set_working_dir("/data/postprocessing/M500_SFE01")
+    pipe.configparams.dir.pipeline_output = "/data/postprocessing/M500_SFE01/"
 
 The working directory will contain three subdirectories: ``ramses/`` (Zarr
 archive), ``radmc3d/`` (RADMC-3D files), and ``polaris/`` (POLARIS files).
@@ -264,8 +264,8 @@ Putting it all together:
     from radprocess.pipeline.Pipeline import Pipeline
 
     pipe = Pipeline()
-    pipe.configparams.ramsesoutput.ramses_output_dir = "/data/outputs/Mass500/output_00940/"
-    pipe.set_working_dir("/data/postprocessing/M500_SFE01")
+    pipe.configparams.dir.ramses_output = "/data/outputs/Mass500/output_00940/"
+    pipe.configparams.dir.pipeline_output = "/data/postprocessing/M500_SFE01/"
 
     # AMR fields to extract
     pipe.configparams.amrsource.rho = True
