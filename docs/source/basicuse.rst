@@ -88,6 +88,16 @@ For a single-component model (e.g., pure silicate), use a single entry with
 Running the full pipeline
 =========================
 
+Step 0: Set the pymsesrc file 
+-------------------
+
+You have the option to set, or reset the pymsesrc file according to the current RAMSES output. 
+It is recommanded to set it each time you want to run a new pipeline: 
+
+.. code-block:: python
+
+    pipe.set_pymsesrc()
+
 Step 1: Load RAMSES
 -------------------
 
