@@ -1,7 +1,7 @@
 """
 _____________________________________________________________________________________________________________
 file name: Subbox
-last update: May 2026
+last update: June 2026
 language: > PYTHON 3.9
 short description: Extract subboxes around individual sinks from a RAMSES Zarr grid
                    and produce one RADMC-3D or POLARIS folder per isolated sink.
@@ -165,6 +165,11 @@ def _extract_subbox(root, sink_idx, sinks, box_half_width_au, hole_au,
         By = np.array(root["By"])
         Bz = np.array(root["Bz"])
 
+    # Velocity field (needed for POLARIS line RT)
+    Vel = None
+    if "velocity" in root:
+        Vel = np.array(root["velocity"])  # shape (N, 3), in m/s
+
     # ----------------------------------------------------------
     # Sink properties
     # ----------------------------------------------------------
@@ -285,6 +290,7 @@ def _extract_subbox(root, sink_idx, sinks, box_half_width_au, hole_au,
     sub_Bx = Bx[mask] if Bx is not None else None
     sub_By = By[mask] if By is not None else None
     sub_Bz = Bz[mask] if Bz is not None else None
+    sub_Vel = Vel[mask] if Vel is not None else None
 
     # ----------------------------------------------------------
     # Re-level: if coarse cells have level < k_extract, enlarge the
@@ -338,6 +344,7 @@ def _extract_subbox(root, sink_idx, sinks, box_half_width_au, hole_au,
         sub_Bx = Bx[mask] if Bx is not None else None
         sub_By = By[mask] if By is not None else None
         sub_Bz = Bz[mask] if Bz is not None else None
+        sub_Vel = Vel[mask] if Vel is not None else None
         nb_cells_sub = int(mask.sum())
 
     # Cell positions relative to box origin (for octree insertion)
@@ -396,6 +403,7 @@ def _extract_subbox(root, sink_idx, sinks, box_half_width_au, hole_au,
         "sub_Bx": sub_Bx,
         "sub_By": sub_By,
         "sub_Bz": sub_Bz,
+        "sub_Vel": sub_Vel,
         # Sink properties
         "sink_pos_m": sink_pos_m,
         "sink_mass_g": sink_mass_g,
@@ -575,6 +583,7 @@ def build_subbox_polaris(
     has_gas = sub["sub_gas"] is not None
     has_T = sub["sub_T"] is not None
     has_B = sub["sub_Bx"] is not None
+    has_V = sub["sub_Vel"] is not None
 
     if not has_gas:
         print("WARNING: No gas density in Zarr. Using sum of dust densities.")
@@ -582,9 +591,11 @@ def build_subbox_polaris(
         print("WARNING: No temperature in Zarr. Setting T=10 K everywhere.")
     if not has_B:
         print("WARNING: No B-field in Zarr. Setting B=0.")
+    if not has_V:
+        print("WARNING: No velocity field in Zarr. Setting V=0.")
 
     # Build octree with POLARIS cell data:
-    # Bx, By, Bz, gas_density (kg/m^3), Tgas (K), dust_density_1, ..., dust_density_N (kg/m^3)
+    # Bx, By, Bz, Vx, Vy, Vz, gas_density (kg/m^3), Tgas (K), dust_density_1, ..., dust_density_N (kg/m^3)
     tree = OcTree(0.0, 0.0, 0.0, l_box)
     tree.nr_of_cells = nb_cells_sub
 
@@ -597,6 +608,10 @@ def build_subbox_polaris(
         cell_Bx = float(sub["sub_Bx"][i]) if has_B else 0.0
         cell_By = float(sub["sub_By"][i]) if has_B else 0.0
         cell_Bz = float(sub["sub_Bz"][i]) if has_B else 0.0
+        # Velocity: Zarr stores m/s, POLARIS expects m/s (SI)
+        cell_Vx = float(sub["sub_Vel"][i, 0]) if has_V else 0.0
+        cell_Vy = float(sub["sub_Vel"][i, 1]) if has_V else 0.0
+        cell_Vz = float(sub["sub_Vel"][i, 2]) if has_V else 0.0
 
         # Dig hole
         dx = sub["sub_cx"][i] - sub["sink_pos_m"][0]
@@ -608,6 +623,7 @@ def build_subbox_polaris(
 
         cell_data = [
             cell_Bx, cell_By, cell_Bz,
+            cell_Vx, cell_Vy, cell_Vz,
             float(cell_gas),
             float(cell_T),
         ] + cell_dust.tolist()
@@ -632,8 +648,8 @@ def build_subbox_polaris(
     # Write POLARIS binary grid
     output_file = output_dir / f"ramses_grid_sink_{sink_idx:04d}.dat"
 
-    # Data IDs: 4=Bx, 5=By, 6=Bz, 28=gas density, 3=gas temperature, 29=dust density
-    data_ids = [4, 5, 6, 28, 3] + [29] * n_dust
+    # Data IDs: 4=Bx, 5=By, 6=Bz, 7=Vx, 8=Vy, 9=Vz, 28=gas density, 3=gas temperature, 29=dust density
+    data_ids = [4, 5, 6, 7, 8, 9, 28, 3] + [29] * n_dust
     data_len = len(data_ids)
 
     print(f"    Writing POLARIS binary grid to: {output_file}")
