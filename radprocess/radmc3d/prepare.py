@@ -78,7 +78,7 @@ def convert_polaris_opacities(polaris_data_dir, radmc_dir, n_dust=None):
 
     kappa_model_names = []
 
-    print("  Converting POLARIS opacities to RADMC-3D format:")
+    print("Converting POLARIS opacities to RADMC-3D format:")
 
     for polaris_file in polaris_files:
         # Derive model name from filename (strip .dat)

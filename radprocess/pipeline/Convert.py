@@ -579,7 +579,7 @@ class Convert:
 
         print("Writing dust_density.inp file: done\n")
 
-        print("  Writing stars.inp\n")
+        print("Writing stars.inp\n")
         radmc3d.write.stars(radmc_dir, 
                             num_sinks,
                             sink_masses, 
