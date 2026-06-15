@@ -444,7 +444,12 @@ class Convert:
         data      = sinks.data
 
         #!!!!!!!TEMPORARY, DEFINE STARS PROPERTIES HERE, will change later.
-        boxlen_pc =  0.169154432386102 #pc
+        info_files = sorted(Path(ramses_dir).glob("info_*.txt"))
+        for line in open(info_files[0]):
+            if "boxlen" in line and "=" in line:
+                boxlen = float(line.split("=")[1])
+                break
+                
         lmin = 1e-3
         lmax = 1e4
         nlam = 210
@@ -464,7 +469,8 @@ class Convert:
             intlum_idx = sinks.columns.index("int_lum[Lsol]")
             
             sec_yr = 365*24*60*60
-            sink_positions  = (sinks.data[:, [x_idx, y_idx, z_idx]]- boxlen_pc / 2.0)
+            #sink_positions  = (sinks.data[:, [x_idx, y_idx, z_idx]]- boxlen_pc / 2.0)
+            sink_positions_m = (sinks.data[:, [x_idx, y_idx, z_idx]] / boxlen - 0.5) * l_m
             sink_masses     = sinks.data[:, m_idx]*M_sun
             acc_rate        = sinks.data[:, accrate_idx]*M_sun/sec_yr
             lint            = sinks.data[:, intlum_idx]*L_sun
@@ -501,12 +507,11 @@ class Convert:
             cell_dust_density = dust_massdensity[i, :].copy() #dust_massdensity[i, :].copy()
 
             if sinks.num_sinks > 0:
-                for star_pos in sink_positions:
-                    # Calculate distance from the cell to the current star.
+                for star_pos_m in sink_positions_m:
                     d2 = (
-                        (c_x - star_pos[0]*pc2m)**2 +
-                        (c_y - star_pos[1]*pc2m)**2 +
-                        (c_z - star_pos[2]*pc2m)**2
+                        (c_x - star_pos_m[0])**2 +
+                        (c_y - star_pos_m[1])**2 +
+                        (c_z - star_pos_m[2])**2
                     )
                     # If the cell is within the hole radius, set densities to zero.
                     if d2 <= hole_radius2:
@@ -597,10 +602,11 @@ class Convert:
         Convert Zarr grid data to a POLARIS binary octree grid file.
 
         The POLARIS grid stores per-cell data in the following order:
-            Bx, By, Bz, gas_mass_density, Tgas, dust_mass_density_1, ..., dust_mass_density_N
+            Bx, By, Bz, Vx, Vy, Vz, gas_mass_density, Tgas, dust_mass_density_1, ..., dust_mass_density_N
 
         The corresponding POLARIS data IDs written in the header are:
-            4 (Bx), 5 (By), 6 (Bz), 28 (gas density), 3 (gas temperature),
+            4 (Bx), 5 (By), 6 (Bz), 7 (Vx), 8 (Vy), 9 (Vz),
+            28 (gas density), 3 (gas temperature),
             29 (dust density) x N_dust
 
         Parameters
@@ -687,6 +693,19 @@ class Convert:
             By = np.zeros(nb_cells, dtype=np.float32)
             Bz = np.zeros(nb_cells, dtype=np.float32)
 
+        # Velocity field: Zarr stores m/s (SI), POLARIS expects m/s (SI)
+        # Data IDs: 7 = Vx, 8 = Vy, 9 = Vz
+        has_velocity = "velocity" in root
+        if has_velocity:
+            velocity = np.array(root["velocity"])  # shape (N, 3), already in m/s
+            Vx = velocity[:, 0]
+            Vy = velocity[:, 1]
+            Vz = velocity[:, 2]
+        else:
+            Vx = np.zeros(nb_cells, dtype=np.float32)
+            Vy = np.zeros(nb_cells, dtype=np.float32)
+            Vz = np.zeros(nb_cells, dtype=np.float32)
+
         # Gas temperature (K)
         if "Tgas" in root:
             Tgas = np.array(root["Tgas"])
@@ -730,6 +749,7 @@ class Convert:
         print(f"    Length (min, max)    : {l_m/(2**max_level):.3e}, {l_m:.3e} m")
         print(f"    Dust species         : {n_dust}")
         print(f"    B-field              : {'yes' if has_bfield else 'zeros'}")
+        print(f"    Velocity             : {'yes' if has_velocity else 'zeros'}")
         print(f"    Temperature          : {'from Zarr' if 'Tgas' in root else 'default 10 K'}\n")
 
         tree = OcTree(x_min, y_min, z_min, l_m)
@@ -756,9 +776,10 @@ class Convert:
                         cell_dust[:] = 0.0
                         break
 
-            # POLARIS cell data order: Bx, By, Bz, gas_density, Tgas, dust_density_1, ..., dust_density_N
+            # POLARIS cell data order: Bx, By, Bz, Vx, Vy, Vz, gas_density, Tgas, dust_density_1, ..., dust_density_N
             cell_data = [
                 float(Bx[i]), float(By[i]), float(Bz[i]),
+                float(Vx[i]), float(Vy[i]), float(Vz[i]),
                 float(cell_gas),
                 float(cell_T),
             ] + cell_dust.tolist()
@@ -793,8 +814,8 @@ class Convert:
         ramses_num = int(root.attrs.get("ramses_output_num", 0))
         output_file = polaris_dir / f"ramses_grid_{ramses_num:05d}.dat"
 
-        # Data IDs: 4=Bx, 5=By, 6=Bz, 28=gas density, 3=gas temperature, 29=dust density
-        data_ids = [4, 5, 6, 28, 3] + [29] * n_dust
+        # Data IDs: 4=Bx, 5=By, 6=Bz, 7=Vx, 8=Vy, 9=Vz, 28=gas density, 3=gas temperature, 29=dust density
+        data_ids = [4, 5, 6, 7, 8, 9, 28, 3] + [29] * n_dust
         data_len = len(data_ids)
 
         print(f"Writing POLARIS binary grid to: {output_file}")

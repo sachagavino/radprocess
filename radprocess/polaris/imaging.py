@@ -89,6 +89,7 @@ def write_imaging_cmd(
     acceptance_angle=None,
     nr_photons_scat=None,
     source_star_scat=None,
+    detector_shift_m=None,
 ):
     """
     Write a POLARIS command file for dust continuum imaging at a
@@ -249,20 +250,45 @@ def write_imaging_cmd(
         theta = view_details["theta"]
         phi = view_details["phi"]
 
+        # Compute 2D detector shift from 3D sink offset.
+        # POLARIS detector_dust accepts ∆x ∆y as the last two parameters,
+        # which shift the image center in the detector plane (in metres).
+        det_dx = 0.0
+        det_dy = 0.0
+        if detector_shift_m is not None:
+            shift = np.array(detector_shift_m, dtype=float)
+            a1 = np.array(axis1, dtype=float)
+            a2 = np.array(axis2, dtype=float)
+            det_dx = float(np.dot(shift, a1))
+            det_dy = float(np.dot(shift, a2))
+
+        has_shift = (det_dx != 0.0 or det_dy != 0.0)
+
         for wave_mm in wavelengths_mm:
             wave_m = wave_mm * 1e-3  # mm -> m
             if fov_m is not None:
-                f.write(
+                line = (
                     f'\n\t<detector_dust nr_pixel = "{npix}"> '
                     f"{wave_m:e} {wave_m:e} 1 1 "
                     f"{theta} {phi} {distance_m:e} {fov_m:e} {fov_m:e}"
                 )
+                if has_shift:
+                    line += f" {det_dx:e} {det_dy:e}"
+                f.write(line)
             else:
-                f.write(
-                    f'\n\t<detector_dust nr_pixel = "{npix}"> '
-                    f"{wave_m:e} {wave_m:e} 1 1 "
-                    f"{theta} {phi} {distance_m:e}"
-                )
+                if has_shift:
+                    # Must provide sidelength to reach the shift fields
+                    f.write(
+                        f'\n\t<detector_dust nr_pixel = "{npix}"> '
+                        f"{wave_m:e} {wave_m:e} 1 1 "
+                        f"{theta} {phi} {distance_m:e} -1 -1 {det_dx:e} {det_dy:e}"
+                    )
+                else:
+                    f.write(
+                        f'\n\t<detector_dust nr_pixel = "{npix}"> '
+                        f"{wave_m:e} {wave_m:e} 1 1 "
+                        f"{theta} {phi} {distance_m:e}"
+                    )
 
         f.write("\n\n</task>")
 
@@ -301,6 +327,7 @@ def render_images(
     acceptance_angle=None,
     nr_photons_scat=None,
     source_star_scat=None,
+    detector_shift_m=None,
 ):
     """
     Full Step 8: write POLARIS imaging command files and execute them
@@ -416,6 +443,7 @@ def render_images(
             acceptance_angle=acceptance_angle,
             nr_photons_scat=nr_photons_scat,
             source_star_scat=source_star_scat,
+            detector_shift_m=detector_shift_m,
         )
 
         # Run POLARIS

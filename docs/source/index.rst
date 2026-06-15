@@ -12,5 +12,6 @@ It was originally created to use RAMSES multi-fluid simulations and to generate 
    introduction
    install
    basicuse
+   subboxes
    inputoutput
    convert
