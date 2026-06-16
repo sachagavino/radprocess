@@ -10,9 +10,9 @@ e           = 1.602e-19 #Coulomb
 sigma = 5.670374419e-5     # Stefan–Boltzmann constant [cgs]
 
 ###ASTRONOMICAL CONSTANTS###
-M_sun       = 1.9884e33         #g
-L_sun       = 3.8525e33            # erg s^-1
-R_sun       = 6.96e10           # cm
+M_sun       = 1.98841e33         #g
+L_sun       = 3.828e33            # erg s^-1 IAU 2015
+R_sun       = 6.957e10            # cm
 T_sun       = 5.78e3            # K
 M_earth     = 5.9722e27         #g
 dust_to_gas = 0.01

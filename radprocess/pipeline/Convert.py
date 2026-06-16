@@ -282,7 +282,7 @@ class Convert:
             output["gas_massdensity"] = mp * correction_factor * cells["density"]
 
             for i, e in enumerate(enrich):
-                dust_ratio[:, i-1] = e / correction_factor
+                dust_ratio[:, i] = e / correction_factor
 
 
             for i in range(0, nb_species):
@@ -382,463 +382,403 @@ class Convert:
         
 
     def to_radmc(self, ramses_dir, radmc_dir, root, hole_au, f_acc, gridstyle="octtree", coordsystem="cartesian"):
-        """
-        Convert Zarr grid data to RADMC-3D format.
-        
-        Args:
-            radmc_dir: Output directory for RADMC-3D files
-            root: Zarr root containing grid data
-            hole_au: Radius of hole around stars (in AU)
-            star_positions: List of star positions [(x,y,z), ...] in meters
-            gridstyle: Grid style for RADMC-3D
-            coordsystem: Coordinate system for RADMC-3D
-        """
-        CLR_LINE = " " * 80 + "\r"
-        
-        # Read root section
-        l_m = root.attrs.get("l_m")
-        l_cm = root.attrs.get("l_cm")
-        nb_cells = root.attrs.get("nb_cells")
-        nb_species = root.attrs.get("nb_species", 1)
-        
-        level = np.array(root["level"])
-        x = np.array(root["x"])
-        y = np.array(root["y"])
-        z = np.array(root["z"])
-        
-        # Handle dust density (single species or multi-species)
-        if "dust_massdensities" in root:
-            dust_massdensity = np.array(root["dust_massdensities"])  # shape: (nb_cells, nb_species)
-        elif "dust_massdensity" in root: 
-            dust_massdensity = np.array(root["dust_massdensity"])[:, np.newaxis]  # shape: (nb_cells, 1)
-
-        if "gas_massdensity" in root:
-            gas_massdensity = np.array(root["gas_massdensity"])[:, np.newaxis]  # shape: (nb_cells, 1)
-        
-        # Grid bounds (centered at origin)
-        x_min = -0.5 * l_m
-        y_min = -0.5 * l_m
-        z_min = -0.5 * l_m
-        
-        max_level = int(level.max())
-        min_level = int(level.min())
-        
-        print("\nOctree parameters:")
-        print(f"    Level (min, max)     : {min_level}, {max_level}")
-        print(f"    Nr. of cells (actual): {nb_cells}")
-        print(f"    Nr. of cells (max)   : {8**max_level}")
-        print(f"    Length (min, max)    : {l_m/(2**max_level):.3e}, {l_m:.3e} m")
-        print(f"    Dust species         : {nb_species}\n")
-        
-        # Initialize octree with total cell count
-        tree = OcTree(x_min, y_min, z_min, l_m)
-        tree.nr_of_cells = nb_cells
-        
-        # Convert hole radius if needed
-        hole_radius_m = hole_au * au2m if hole_au > 0 else 0
-
-        sinks = ramses.read.sink_info(ramses_dir)
-        num_sinks = sinks.num_sinks
-        columns   = sinks.columns
-        rows      = sinks.rows
-        data      = sinks.data
-
-        #!!!!!!!TEMPORARY, DEFINE STARS PROPERTIES HERE, will change later.
-        info_files = sorted(Path(ramses_dir).glob("info_*.txt"))
-        for line in open(info_files[0]):
-            if "boxlen" in line and "=" in line:
-                boxlen = float(line.split("=")[1])
-                break
-                
-        lmin = 1e-3
-        lmax = 1e4
-        nlam = 210
-        lam = np.logspace(np.log10(lmin), np.log10(lmax), nlam)
-
-        if sinks.num_sinks > 0:
-            print(f"Found {sinks.num_sinks} sink(s)")
-
-            # --- positions from numeric CSV ---
-            # assuming column names, ... dangerous
-            x_idx = sinks.columns.index("x")
-            y_idx = sinks.columns.index("y")
-            z_idx = sinks.columns.index("z")
-            m_idx = sinks.columns.index("M[Msol]")
-            accrate_idx = sinks.columns.index("acc_rate[Msol/y]")
-            acclum_idx = sinks.columns.index("acc_lum[Lsol]")
-            intlum_idx = sinks.columns.index("int_lum[Lsol]")
+            """
+            Convert Zarr grid data to RADMC-3D format.
             
-            sec_yr = 365*24*60*60
-            #sink_positions  = (sinks.data[:, [x_idx, y_idx, z_idx]]- boxlen_pc / 2.0)
-            sink_positions_m = (sinks.data[:, [x_idx, y_idx, z_idx]] / boxlen - 0.5) * l_m
-            sink_masses     = sinks.data[:, m_idx]*M_sun
-            acc_rate        = sinks.data[:, accrate_idx]*M_sun/sec_yr
-            lint            = sinks.data[:, intlum_idx]*L_sun
-            lacc            = sinks.data[:, acclum_idx]*L_sun
-            ltot            = lint+lacc
-
-            # Compute stellar radii and Teff per sink
-            sink_radii = np.zeros(sinks.num_sinks)
-            sink_teff = 5e3 * np.ones(sinks.num_sinks)
-
-            has_lacc = lacc > 0
-            if has_lacc.any():
-                sink_radii[has_lacc] = f_acc * Ggram * sink_masses[has_lacc] * acc_rate[has_lacc] / lacc[has_lacc]
-                sink_teff[has_lacc] = (ltot[has_lacc] / (4 * np.pi * sigma * sink_radii[has_lacc]**2))**(1/4)
-
-            if not has_lacc.all():
-                print(f"WARNING: {(~has_lacc).sum()} sink(s) have zero accretion luminosity. Using default Teff=5000 K.")
-
-            #sink_positions = sink_positions - boxlen_pc / 2.0
-
-        else:
-            print("No sinks found")
-        
-        # Fill octree
-        print("Constructing octree...")
-        hole_radius2 = (hole_au * au2m)**2
-        for i in range(nb_cells):
-            # Cell position (centered coordinates)
-            c_x = x[i] - 0.5 * l_m
-            c_y = y[i] - 0.5 * l_m
-            c_z = z[i] - 0.5 * l_m
+            Args:
+                ramses_dir: Path to RAMSES output directory (for sink info)
+                radmc_dir: Output directory for RADMC-3D files
+                root: Zarr root containing grid data
+                hole_au: Radius of hole around sinks (in AU)
+                f_acc: Accretion efficiency (unused here, kept for API consistency)
+                gridstyle: Grid style for RADMC-3D
+                coordsystem: Coordinate system for RADMC-3D
+            """
+            CLR_LINE = " " * 80 + "\r"
             
-            # Get dust density for this cell
-            cell_dust_density = dust_massdensity[i, :].copy() #dust_massdensity[i, :].copy()
+            # Read root section
+            l_m = root.attrs.get("l_m")
+            l_cm = root.attrs.get("l_cm")
+            nb_cells = root.attrs.get("nb_cells")
+            nb_species = root.attrs.get("nb_species", 1)
+            
+            level = np.array(root["level"])
+            x = np.array(root["x"])
+            y = np.array(root["y"])
+            z = np.array(root["z"])
+            
+            # Handle dust density (single species or multi-species)
+            if "dust_massdensities" in root:
+                dust_massdensity = np.array(root["dust_massdensities"])  # shape: (nb_cells, nb_species)
+            elif "dust_massdensity" in root: 
+                dust_massdensity = np.array(root["dust_massdensity"])[:, np.newaxis]  # shape: (nb_cells, 1)
+
+            if "gas_massdensity" in root:
+                gas_massdensity = np.array(root["gas_massdensity"])[:, np.newaxis]  # shape: (nb_cells, 1)
+            
+            # Grid bounds (centered at origin)
+            x_min = -0.5 * l_m
+            y_min = -0.5 * l_m
+            z_min = -0.5 * l_m
+            
+            max_level = int(level.max())
+            min_level = int(level.min())
+            
+            print("\nOctree parameters:")
+            print(f"    Level (min, max)     : {min_level}, {max_level}")
+            print(f"    Nr. of cells (actual): {nb_cells}")
+            print(f"    Nr. of cells (max)   : {8**max_level}")
+            print(f"    Length (min, max)    : {l_m/(2**max_level):.3e}, {l_m:.3e} m")
+            print(f"    Dust species         : {nb_species}\n")
+            
+            # Initialize octree with total cell count
+            tree = OcTree(x_min, y_min, z_min, l_m)
+            tree.nr_of_cells = nb_cells
+
+            # ----------------------------------------------------------
+            # Read sinks and dig holes (vectorized)
+            # ----------------------------------------------------------
+            sinks = ramses.read.sink_info(ramses_dir)
+
+            info_files = sorted(Path(ramses_dir).glob("info_*.txt"))
+            for line in open(info_files[0]):
+                if "boxlen" in line and "=" in line:
+                    boxlen = float(line.split("=")[1])
+                    break
 
             if sinks.num_sinks > 0:
-                for star_pos_m in sink_positions_m:
-                    d2 = (
-                        (c_x - star_pos_m[0])**2 +
-                        (c_y - star_pos_m[1])**2 +
-                        (c_z - star_pos_m[2])**2
-                    )
-                    # If the cell is within the hole radius, set densities to zero.
-                    if d2 <= hole_radius2:
-                        print('found dstar is smaller than hole_radius_m')
-                        cell_dust_density[:] = 0
-                        break
-                        #print("dust mass density used to be", data['densd01'][i])
-
+                print(f"Found {sinks.num_sinks} sink(s)")
+                x_idx = sinks.columns.index("x")
+                y_idx = sinks.columns.index("y")
+                z_idx = sinks.columns.index("z")
+                sink_positions_m = (sinks.data[:, [x_idx, y_idx, z_idx]] / boxlen - 0.5) * l_m
             else:
-                print("No sinks found, no hole digged")
+                print("No sinks found")
 
-            # Create cell and insert into tree
-            cell = CellOct(c_x, c_y, c_z, 0, level[i])
-            cell.data = cell_dust_density.tolist()
+            if sinks.num_sinks > 0 and hole_au > 0:
+                hole_radius2 = (hole_au * au2m)**2
+                cx = x - 0.5 * l_m
+                cy = y - 0.5 * l_m
+                cz = z - 0.5 * l_m
+
+                hole_mask = np.zeros(nb_cells, dtype=bool)
+                for sp in sink_positions_m:
+                    d2 = (cx - sp[0])**2 + (cy - sp[1])**2 + (cz - sp[2])**2
+                    hole_mask |= (d2 <= hole_radius2)
+
+                dust_massdensity[hole_mask, :] = 0.0
+                print(f"Hole digging: zeroed {hole_mask.sum()} cells "
+                    f"around {len(sink_positions_m)} sink(s)")
+
+            # ----------------------------------------------------------
+            # Build octree
+            # ----------------------------------------------------------
+            print("Constructing octree...")
+            for i in range(nb_cells):
+                c_x = x[i] - 0.5 * l_m
+                c_y = y[i] - 0.5 * l_m
+                c_z = z[i] - 0.5 * l_m
+
+                cell = CellOct(c_x, c_y, c_z, 0, level[i])
+                cell.data = dust_massdensity[i, :].tolist()
+
+                tree.insertInTree(tree.root, cell, 0)
+
+                if i % 10000 == 0:
+                    progress = 100.0 * i / nb_cells
+                    sys.stdout.write(f"Constructing octree: {progress:.1f}%\r")
+                    sys.stdout.flush()
+
+            sys.stdout.write(CLR_LINE)
+            print("Constructing octree: done\n")
             
-            tree.insertInTree(tree.root, cell, 0)
+            # Check octree integrity
+            print("Checking octree integrity...")
+            tree.reset_counter()
+            check = tree.checkOcTree(tree.root)
+            sys.stdout.write(CLR_LINE)
             
-            # Progress indicator
-            if i % 10000 == 0:
-                progress = 100.0 * i / nb_cells
-                sys.stdout.write(f"Constructing octree: {progress:.1f}%\r")
-                sys.stdout.flush()
+            if not check:
+                raise RuntimeError("ERROR: Octree integrity check failed!")
+            
+            print("Octree structure: OK\n")
+            
+            # Write octree to RADMC-3D format
+            print("Converting to RADMC-3D format...")
+            tree.cell_counter = 0
+            grid = []
+            density = []
+            tree._n_species = nb_species
+            print('write OcTree call: ')
+            tree.writeOcTree_radmc(tree.root, grid, density)
+            densityarray = np.array(density)
+            sys.stdout.write(CLR_LINE)
+            print("Converting to RADMC-3D format: done\n")
 
-        sys.stdout.write(CLR_LINE)
-        print("Constructing octree: done\n")
-        
-        # Check octree integrity
-        print("Checking octree integrity...")
-        tree.reset_counter()  # Reset counter for checking
-        check = tree.checkOcTree(tree.root)
-        sys.stdout.write(CLR_LINE)
-        
-        if not check:
-            raise RuntimeError("ERROR: Octree integrity check failed!")
-        
-        print("Octree structure: OK\n")
-        
-        # Write octree to RADMC-3D format
-        print("Converting to RADMC-3D format...")
-        tree.cell_counter = 0  # Reset counter for writing
-        grid = []
-        density = []
-        tree._n_species = nb_species
-        print('write OcTree call: ')
-        tree.writeOcTree_radmc(tree.root, grid, density)
-        densityarray = np.array(density)
-        sys.stdout.write(CLR_LINE)
-        print("Converting to RADMC-3D format: done\n")
-        
+            print("Writing the amr_grid.inp file for RADMC-3D...\n")
+            radmc3d.write.amr_grid(radmc_dir, 
+                                grid, 
+                                max_level,
+                                nb_cells, 
+                                l_cm, 
+                                gridstyle=gridstyle, 
+                                coordsystem=coordsystem, 
+                                x=None, 
+                                y=None, 
+                                z=None)
+            print("Writing amr_grid.inp file: done\n")
 
-        print("Writing the amr_grid.inp file for RADMC-3D...\n")
-        radmc3d.write.amr_grid(radmc_dir, 
-                               grid, 
-                               max_level,
-                               nb_cells, 
-                               l_cm, 
-                               gridstyle=gridstyle, 
-                               coordsystem=coordsystem, 
-                               x=None, 
-                               y=None, 
-                               z=None)
-        print("Writing amr_grid.inp file: done\n")
+            print("Writing the dust_density.inp file for RADMC-3D...\n")
+            radmc3d.write.dust_density(radmc_dir, 
+                                    densityarray, 
+                                    nb_cells,
+                                    nb_species, 
+                                    gridstyle=gridstyle) 
 
-        print("Writing the dust_density.inp file for RADMC-3D...\n")
-        radmc3d.write.dust_density(radmc_dir, 
-                                   densityarray, 
-                                   nb_cells,
-                                   nb_species, 
-                                   gridstyle=gridstyle) 
+            print("Writing dust_density.inp file: done\n")
 
-        print("Writing dust_density.inp file: done\n")
 
-        print("Writing stars.inp\n")
-        radmc3d.write.stars(radmc_dir, 
-                            num_sinks,
-                            sink_masses, 
-                            sink_positions*pc2cm,
-                            sink_radii,
-                            lam,
-                            sink_teff)
-        print("Writing stars.inp file: done\n")
+            return grid, densityarray
 
-        return grid, densityarray
 
     def to_polaris(self, ramses_dir, polaris_dir, root, hole_au=0, f_acc=0.1,
-                   has_dust_in_sim=True):
-        """
-        Convert Zarr grid data to a POLARIS binary octree grid file.
+                    has_dust_in_sim=True):
+            """
+            Convert Zarr grid data to a POLARIS binary octree grid file.
 
-        The POLARIS grid stores per-cell data in the following order:
-            Bx, By, Bz, Vx, Vy, Vz, gas_mass_density, Tgas, dust_mass_density_1, ..., dust_mass_density_N
+            The POLARIS grid stores per-cell data in the following order:
+                Bx, By, Bz, Vx, Vy, Vz, gas_mass_density, Tgas, dust_mass_density_1, ..., dust_mass_density_N
 
-        The corresponding POLARIS data IDs written in the header are:
-            4 (Bx), 5 (By), 6 (Bz), 7 (Vx), 8 (Vy), 9 (Vz),
-            28 (gas density), 3 (gas temperature),
-            29 (dust density) x N_dust
+            The corresponding POLARIS data IDs written in the header are:
+                4 (Bx), 5 (By), 6 (Bz), 7 (Vx), 8 (Vy), 9 (Vz),
+                28 (gas density), 3 (gas temperature),
+                29 (dust density) x N_dust
 
-        Parameters
-        ----------
-        ramses_dir : str or Path
-            Path to the RAMSES output directory (used to read sink info).
-        polaris_dir : str or Path
-            Output directory where the POLARIS grid file will be written.
-        root : zarr.Group
-            Zarr root containing the AMR grid data (from Convert.ramses()).
-        hole_au : float
-            Radius of the hole around each sink (AU). Density set to 0 inside.
-        f_acc : float
-            Accretion efficiency factor (not used directly here but kept for
-            consistency with to_radmc).
-        has_dust_in_sim : bool
-            If True, the simulation carries explicit dust fields.
-            If False, a single virtual dust species at 1 percent of gas density is assumed.
+            Parameters
+            ----------
+            ramses_dir : str or Path
+                Path to the RAMSES output directory (used to read sink info).
+            polaris_dir : str or Path
+                Output directory where the POLARIS grid file will be written.
+            root : zarr.Group
+                Zarr root containing the AMR grid data (from Convert.ramses()).
+            hole_au : float
+                Radius of the hole around each sink (AU). Density set to 0 inside.
+            f_acc : float
+                Accretion efficiency factor (not used directly here but kept for
+                consistency with to_radmc).
+            has_dust_in_sim : bool
+                If True, the simulation carries explicit dust fields.
+                If False, a single virtual dust species at 1 percent of gas density is assumed.
 
-        Returns
-        -------
-        output_file : Path
-            Path to the written POLARIS binary grid file.
-        """
-        import struct
+            Returns
+            -------
+            output_file : Path
+                Path to the written POLARIS binary grid file.
+            """
+            import struct
 
-        CLR_LINE = " " * 80 + "\r"
-        POLARIS_GRID_ID = 20  # octree
+            CLR_LINE = " " * 80 + "\r"
+            POLARIS_GRID_ID = 20  # octree
 
-        polaris_dir = Path(polaris_dir)
-        polaris_dir.mkdir(parents=True, exist_ok=True)
+            polaris_dir = Path(polaris_dir)
+            polaris_dir.mkdir(parents=True, exist_ok=True)
 
-        # ----------------------------------------------------------
-        # 0) Read Zarr arrays
-        # ----------------------------------------------------------
-        l_m = root.attrs.get("l_m")
-        l_cm = root.attrs.get("l_cm")
-        nb_cells = root.attrs.get("nb_cells")
-        nb_species = root.attrs.get("nb_species", 1)
+            # ----------------------------------------------------------
+            # 0) Read Zarr arrays
+            # ----------------------------------------------------------
+            l_m = root.attrs.get("l_m")
+            l_cm = root.attrs.get("l_cm")
+            nb_cells = root.attrs.get("nb_cells")
+            nb_species = root.attrs.get("nb_species", 1)
 
-        level = np.array(root["level"])
-        x = np.array(root["x"])
-        y = np.array(root["y"])
-        z = np.array(root["z"])
+            level = np.array(root["level"])
+            x = np.array(root["x"])
+            y = np.array(root["y"])
+            z = np.array(root["z"])
 
-        # Gas density: Zarr stores g/cc (CGS), POLARIS expects kg/m^3 (SI)
-        if "gas_massdensity" in root:
-            gas_massdensity = np.array(root["gas_massdensity"]) * 1e3  # g/cc -> kg/m^3
-        else:
-            raise RuntimeError("gas_massdensity not found in Zarr. "
-                               "Ensure the RAMSES grid was created with density fields enabled.")
-
-        # Dust densities: same conversion g/cc -> kg/m^3
-        if "dust_massdensities" in root:
-            dust_massdensity = np.array(root["dust_massdensities"]) * 1e3
-        elif "dust_massdensity" in root:
-            dust_massdensity = np.array(root["dust_massdensity"]) * 1e3
-            if dust_massdensity.ndim == 1:
-                dust_massdensity = dust_massdensity[:, np.newaxis]
-        else:
-            raise RuntimeError("No dust density field found in Zarr.")
-
-        n_dust = dust_massdensity.shape[1]
-
-        # B-field: POLARIS expects Gauss (CGS).
-        # If B-field was loaded via pymses, it should already be in Gauss
-        # after the unit_mag conversion. If not available, set to zero.
-        # The Zarr may or may not have B-field depending on user config.
-        has_bfield = "B_left" in root or "B_right" in root or "Bx" in root
-        if has_bfield:
-            # If stored as separate components
-            if "Bx" in root:
-                Bx = np.array(root["Bx"])
-                By = np.array(root["By"])
-                Bz = np.array(root["Bz"])
+            # Gas density: Zarr stores g/cc (CGS), POLARIS expects kg/m^3 (SI)
+            if "gas_massdensity" in root:
+                gas_massdensity = np.array(root["gas_massdensity"]) * 1e3  # g/cc -> kg/m^3
             else:
-                # Not available as pre-computed components. 
-                # Set to zero and warn.
-                print("WARNING: B-field arrays not found in expected format. Setting B=0.")
-                has_bfield = False
+                raise RuntimeError("gas_massdensity not found in Zarr. "
+                                "Ensure the RAMSES grid was created with density fields enabled.")
 
-        if not has_bfield:
-            Bx = np.zeros(nb_cells, dtype=np.float32)
-            By = np.zeros(nb_cells, dtype=np.float32)
-            Bz = np.zeros(nb_cells, dtype=np.float32)
+            # Dust densities: same conversion g/cc -> kg/m^3
+            if "dust_massdensities" in root:
+                dust_massdensity = np.array(root["dust_massdensities"]) * 1e3
+            elif "dust_massdensity" in root:
+                dust_massdensity = np.array(root["dust_massdensity"]) * 1e3
+                if dust_massdensity.ndim == 1:
+                    dust_massdensity = dust_massdensity[:, np.newaxis]
+            else:
+                raise RuntimeError("No dust density field found in Zarr.")
 
-        # Velocity field: Zarr stores m/s (SI), POLARIS expects m/s (SI)
-        # Data IDs: 7 = Vx, 8 = Vy, 9 = Vz
-        has_velocity = "velocity" in root
-        if has_velocity:
-            velocity = np.array(root["velocity"])  # shape (N, 3), already in m/s
-            Vx = velocity[:, 0]
-            Vy = velocity[:, 1]
-            Vz = velocity[:, 2]
-        else:
-            Vx = np.zeros(nb_cells, dtype=np.float32)
-            Vy = np.zeros(nb_cells, dtype=np.float32)
-            Vz = np.zeros(nb_cells, dtype=np.float32)
+            n_dust = dust_massdensity.shape[1]
 
-        # Gas temperature (K)
-        if "Tgas" in root:
-            Tgas = np.array(root["Tgas"])
-        elif "Tdust" in root:
-            Tgas = np.array(root["Tdust"])
-        else:
-            print("WARNING: No temperature field found in Zarr. Setting T=10 K everywhere.")
-            Tgas = np.full(nb_cells, 10.0, dtype=np.float32)
+            # B-field: POLARIS expects Gauss (CGS).
+            has_bfield = "B_left" in root or "B_right" in root or "Bx" in root
+            if has_bfield:
+                if "Bx" in root:
+                    Bx = np.array(root["Bx"])
+                    By = np.array(root["By"])
+                    Bz = np.array(root["Bz"])
+                else:
+                    print("WARNING: B-field arrays not found in expected format. Setting B=0.")
+                    has_bfield = False
 
-        # ----------------------------------------------------------
-        # 1) Read sinks for hole digging
-        # ----------------------------------------------------------
-        sinks = ramses.read.sink_info(ramses_dir)
-        boxlen_pc = l_m / pc2m
+            if not has_bfield:
+                Bx = np.zeros(nb_cells, dtype=np.float32)
+                By = np.zeros(nb_cells, dtype=np.float32)
+                Bz = np.zeros(nb_cells, dtype=np.float32)
 
-        sink_positions_m = None
-        if sinks.num_sinks > 0 and hole_au > 0:
-            cols = sinks.columns
-            x_col = cols.index("x")
-            y_col = cols.index("y")
-            z_col = cols.index("z")
+            # Velocity field: Zarr stores m/s (SI), POLARIS expects m/s (SI)
+            has_velocity = "velocity" in root
+            if has_velocity:
+                velocity = np.array(root["velocity"])  # shape (N, 3), already in m/s
+                Vx = velocity[:, 0]
+                Vy = velocity[:, 1]
+                Vz = velocity[:, 2]
+            else:
+                Vx = np.zeros(nb_cells, dtype=np.float32)
+                Vy = np.zeros(nb_cells, dtype=np.float32)
+                Vz = np.zeros(nb_cells, dtype=np.float32)
 
-            # Sink positions: RAMSES code units (pc), centered, then to meters
-            sink_positions_m = (
-                sinks.data[:, [x_col, y_col, z_col]] - boxlen_pc / 2.0
-            ) * pc2m
+            # Gas temperature (K)
+            if "Tgas" in root:
+                Tgas = np.array(root["Tgas"])
+            elif "Tdust" in root:
+                Tgas = np.array(root["Tdust"])
+            else:
+                print("WARNING: No temperature field found in Zarr. Setting T=10 K everywhere.")
+                Tgas = np.full(nb_cells, 10.0, dtype=np.float32)
 
-        # ----------------------------------------------------------
-        # 2) Build octree
-        # ----------------------------------------------------------
-        x_min = -0.5 * l_m
-        y_min = -0.5 * l_m
-        z_min = -0.5 * l_m
+            # ----------------------------------------------------------
+            # 1) Read sinks and dig holes (vectorized)
+            # ----------------------------------------------------------
+            sinks = ramses.read.sink_info(ramses_dir)
 
-        max_level = int(level.max())
-        min_level = int(level.min())
+            info_files = sorted(Path(ramses_dir).glob("info_*.txt"))
+            for line in open(info_files[0]):
+                if "boxlen" in line and "=" in line:
+                    boxlen = float(line.split("=")[1])
+                    break
 
-        print("\nPOLARIS Octree parameters:")
-        print(f"    Level (min, max)     : {min_level}, {max_level}")
-        print(f"    Nr. of cells (actual): {nb_cells}")
-        print(f"    Length (min, max)    : {l_m/(2**max_level):.3e}, {l_m:.3e} m")
-        print(f"    Dust species         : {n_dust}")
-        print(f"    B-field              : {'yes' if has_bfield else 'zeros'}")
-        print(f"    Velocity             : {'yes' if has_velocity else 'zeros'}")
-        print(f"    Temperature          : {'from Zarr' if 'Tgas' in root else 'default 10 K'}\n")
+            sink_positions_m = None
+            if sinks.num_sinks > 0:
+                print(f"Found {sinks.num_sinks} sink(s)")
+                cols = sinks.columns
+                x_col = cols.index("x")
+                y_col = cols.index("y")
+                z_col = cols.index("z")
+                sink_positions_m = (
+                    sinks.data[:, [x_col, y_col, z_col]] / boxlen - 0.5
+                ) * l_m
+            else:
+                print("No sinks found")
 
-        tree = OcTree(x_min, y_min, z_min, l_m)
-        tree.nr_of_cells = nb_cells
+            if sink_positions_m is not None and hole_au > 0:
+                hole_radius2 = (hole_au * au2m) ** 2
+                cx = x - 0.5 * l_m
+                cy = y - 0.5 * l_m
+                cz = z - 0.5 * l_m
 
-        hole_radius2 = (hole_au * au2m) ** 2
-
-        print("Constructing POLARIS octree...")
-        for i in range(nb_cells):
-            c_x = x[i] - 0.5 * l_m
-            c_y = y[i] - 0.5 * l_m
-            c_z = z[i] - 0.5 * l_m
-
-            cell_gas = gas_massdensity[i]
-            cell_dust = dust_massdensity[i, :].copy()
-            cell_T = Tgas[i]
-
-            # Dig holes around sinks
-            if sink_positions_m is not None:
+                hole_mask = np.zeros(nb_cells, dtype=bool)
                 for sp in sink_positions_m:
-                    d2 = (c_x - sp[0])**2 + (c_y - sp[1])**2 + (c_z - sp[2])**2
-                    if d2 <= hole_radius2:
-                        cell_gas = 0.0
-                        cell_dust[:] = 0.0
-                        break
+                    d2 = (cx - sp[0])**2 + (cy - sp[1])**2 + (cz - sp[2])**2
+                    hole_mask |= (d2 <= hole_radius2)
 
-            # POLARIS cell data order: Bx, By, Bz, Vx, Vy, Vz, gas_density, Tgas, dust_density_1, ..., dust_density_N
-            cell_data = [
-                float(Bx[i]), float(By[i]), float(Bz[i]),
-                float(Vx[i]), float(Vy[i]), float(Vz[i]),
-                float(cell_gas),
-                float(cell_T),
-            ] + cell_dust.tolist()
+                gas_massdensity[hole_mask] = 0.0
+                dust_massdensity[hole_mask, :] = 0.0
+                print(f"Hole digging: zeroed {hole_mask.sum()} cells "
+                    f"around {len(sink_positions_m)} sink(s)")
 
-            cell = CellOct(c_x, c_y, c_z, 0, int(level[i]))
-            cell.data = cell_data
+            # ----------------------------------------------------------
+            # 2) Build octree
+            # ----------------------------------------------------------
+            x_min = -0.5 * l_m
+            y_min = -0.5 * l_m
+            z_min = -0.5 * l_m
 
-            tree.insertInTree(tree.root, cell, 0)
+            max_level = int(level.max())
+            min_level = int(level.min())
 
-            if i % 10000 == 0:
-                progress = 100.0 * i / nb_cells
-                sys.stdout.write(f"Constructing POLARIS octree: {progress:.1f}%\r")
-                sys.stdout.flush()
+            print("\nPOLARIS Octree parameters:")
+            print(f"    Level (min, max)     : {min_level}, {max_level}")
+            print(f"    Nr. of cells (actual): {nb_cells}")
+            print(f"    Length (min, max)    : {l_m/(2**max_level):.3e}, {l_m:.3e} m")
+            print(f"    Dust species         : {n_dust}")
+            print(f"    B-field              : {'yes' if has_bfield else 'zeros'}")
+            print(f"    Velocity             : {'yes' if has_velocity else 'zeros'}")
+            print(f"    Temperature          : {'from Zarr' if 'Tgas' in root else 'default 10 K'}\n")
 
-        sys.stdout.write(CLR_LINE)
-        print("Constructing POLARIS octree: done\n")
+            tree = OcTree(x_min, y_min, z_min, l_m)
+            tree.nr_of_cells = nb_cells
 
-        # Check integrity
-        print("Checking octree integrity...")
-        tree.reset_counter()
-        check = tree.checkOcTree(tree.root)
-        sys.stdout.write(CLR_LINE)
+            print("Constructing POLARIS octree...")
+            for i in range(nb_cells):
+                c_x = x[i] - 0.5 * l_m
+                c_y = y[i] - 0.5 * l_m
+                c_z = z[i] - 0.5 * l_m
 
-        if not check:
-            raise RuntimeError("ERROR: POLARIS octree integrity check failed!")
-        print("Octree structure: OK\n")
+                cell_data = [
+                    float(Bx[i]), float(By[i]), float(Bz[i]),
+                    float(Vx[i]), float(Vy[i]), float(Vz[i]),
+                    float(gas_massdensity[i]),
+                    float(Tgas[i]),
+                ] + dust_massdensity[i, :].tolist()
 
-        # ----------------------------------------------------------
-        # 3) Write binary POLARIS grid file
-        # ----------------------------------------------------------
-        # Infer RAMSES output number from Zarr attrs
-        ramses_num = int(root.attrs.get("ramses_output_num", 0))
-        output_file = polaris_dir / f"ramses_grid_{ramses_num:05d}.dat"
+                cell = CellOct(c_x, c_y, c_z, 0, int(level[i]))
+                cell.data = cell_data
 
-        # Data IDs: 4=Bx, 5=By, 6=Bz, 7=Vx, 8=Vy, 9=Vz, 28=gas density, 3=gas temperature, 29=dust density
-        data_ids = [4, 5, 6, 7, 8, 9, 28, 3] + [29] * n_dust
-        data_len = len(data_ids)
+                tree.insertInTree(tree.root, cell, 0)
 
-        print(f"Writing POLARIS binary grid to: {output_file}")
+                if i % 10000 == 0:
+                    progress = 100.0 * i / nb_cells
+                    sys.stdout.write(f"Constructing POLARIS octree: {progress:.1f}%\r")
+                    sys.stdout.flush()
 
-        with open(output_file, "wb") as f:
-            # Header
-            f.write(struct.pack("H", POLARIS_GRID_ID))
-            f.write(struct.pack("H", data_len))
+            sys.stdout.write(CLR_LINE)
+            print("Constructing POLARIS octree: done\n")
 
-            for d_id in data_ids:
-                f.write(struct.pack("H", d_id))
+            # Check integrity
+            print("Checking octree integrity...")
+            tree.reset_counter()
+            check = tree.checkOcTree(tree.root)
+            sys.stdout.write(CLR_LINE)
 
-            f.write(struct.pack("d", l_m))  # grid size in meters
+            if not check:
+                raise RuntimeError("ERROR: POLARIS octree integrity check failed!")
+            print("Octree structure: OK\n")
 
-            # Octree data
-            tree.cell_counter = 0
-            tree.writeOcTree(f, tree.root)
+            # ----------------------------------------------------------
+            # 3) Write binary POLARIS grid file
+            # ----------------------------------------------------------
+            ramses_num = int(root.attrs.get("ramses_output_num", 0))
+            output_file = polaris_dir / f"ramses_grid_{ramses_num:05d}.dat"
 
-        sys.stdout.write(CLR_LINE)
-        print("Writing POLARIS grid: done\n")
-        print(f"POLARIS octree successfully created: {output_file}\n")
+            data_ids = [4, 5, 6, 7, 8, 9, 28, 3] + [29] * n_dust
+            data_len = len(data_ids)
 
-        return output_file
+            print(f"Writing POLARIS binary grid to: {output_file}")
+
+            with open(output_file, "wb") as f:
+                f.write(struct.pack("H", POLARIS_GRID_ID))
+                f.write(struct.pack("H", data_len))
+
+                for d_id in data_ids:
+                    f.write(struct.pack("H", d_id))
+
+                f.write(struct.pack("d", l_m))
+
+                tree.cell_counter = 0
+                tree.writeOcTree(f, tree.root)
+
+            sys.stdout.write(CLR_LINE)
+            print("Writing POLARIS grid: done\n")
+            print(f"POLARIS octree successfully created: {output_file}\n")
+
+            return output_file
 
 
     def to_subboxes(self, ramses_dir, output_dir, root, hole_au, f_acc,

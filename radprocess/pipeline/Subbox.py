@@ -460,26 +460,27 @@ def build_subbox_radmc(
     l_box_cm = l_box * 100.0
     nb_cells_sub = sub["nb_cells_sub"]
     nb_species = sub["nb_species"]
-    hole_radius2 = (hole_au * au2m)**2
 
-    # Build octree with dust density data
+
+    # Vectorized hole digging
+    if hole_au > 0:
+        hole_radius2 = (hole_au * au2m)**2
+        d2 = ((sub["sub_cx"] - sub["sink_pos_m"][0])**2 +
+              (sub["sub_cy"] - sub["sink_pos_m"][1])**2 +
+              (sub["sub_cz"] - sub["sink_pos_m"][2])**2)
+        hole_mask = d2 <= hole_radius2
+        sub["sub_dust"][hole_mask, :] = 0.0
+        print(f"    Hole digging: zeroed {hole_mask.sum()} cells")
+
+    # Build octree
     tree = OcTree(0.0, 0.0, 0.0, l_box)
     tree.nr_of_cells = nb_cells_sub
 
     print("Constructing subbox octree (RADMC-3D)...")
     for i in range(nb_cells_sub):
-        cell_dust = sub["sub_dust"][i, :].copy()
-
-        # Dig hole
-        dx = sub["sub_cx"][i] - sub["sink_pos_m"][0]
-        dy = sub["sub_cy"][i] - sub["sink_pos_m"][1]
-        dz = sub["sub_cz"][i] - sub["sink_pos_m"][2]
-        if dx**2 + dy**2 + dz**2 <= hole_radius2:
-            cell_dust[:] = 0.0
-
         cell = CellOct(sub["rel_x"][i], sub["rel_y"][i], sub["rel_z"][i],
                         0, int(sub["sub_level_local"][i]))
-        cell.data = cell_dust.tolist()
+        cell.data = sub["sub_dust"][i, :].tolist()
         tree.insertInTree(tree.root, cell, 0)
 
         if i % 10000 == 0:

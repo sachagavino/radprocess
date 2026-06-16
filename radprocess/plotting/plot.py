@@ -784,7 +784,7 @@ def subbox_mosaic(
         )
         images.append(im)
 
-        #axes[i].plot(0, 0, "w+", ms=8, mew=1.5)
+        axes[i].plot(0, 0, "w+", ms=8, mew=1.5)
         axes[i].set_title(sink_name, fontsize=fontsize, fontweight="bold")
         axes[i].tick_params(labelsize=fontsize - 4)
 
@@ -1413,3 +1413,157 @@ def compute_alpha_mass(
     print(f"  Gas-to-dust ratio = {gas_to_dust_ratio}")
 
     return table
+
+
+# ============================================================
+#  Mean optical depth within aperture
+# ============================================================
+
+def compute_tau_aperture(
+    pipeline_output,
+    view="xy",
+    wavelength_idx=0,
+    aperture_au=None,
+    label="whole",
+    sink_folders=None,
+):
+    """
+    Compute the mean optical depth τ within an aperture for each sink.
+
+    τ is read from the POLARIS FITS files (plane index 4).
+
+    Parameters
+    ----------
+    pipeline_output : str or Path
+        Pipeline output directory (e.g., test1/).
+    view : str
+        Viewing direction: "xy", "xz", or "yz".
+    wavelength_idx : int
+        Which wavelength (0-indexed).
+    aperture_au : float or None
+        Aperture radius in AU. If None, use the full image.
+    label : str
+        Subdirectory label (default "whole").
+    sink_folders : list of str or None
+        If provided, only process these sinks.
+
+    Returns
+    -------
+    result : dict
+        "sink_id": array of sink IDs
+        "tau_mean": mean τ within aperture for each sink
+        "tau_max": maximum τ within aperture
+        "tau_median": median τ within aperture
+    """
+    from astropy.io import fits as pyfits
+
+    pipeline_output = Path(pipeline_output)
+    image_base = pipeline_output / "images" / "subboxes"
+    au2m_local = 1.4959787070e11
+
+    if sink_folders is not None:
+        folder_names = sink_folders
+    else:
+        folder_names = sorted([
+            d.name for d in image_base.iterdir()
+            if d.is_dir() and d.name.startswith("sink_")
+        ])
+
+    sink_ids = []
+    tau_means = []
+    tau_maxs = []
+    tau_medians = []
+    tau_flux_weighteds = []
+    skipped = 0
+
+    for name in folder_names:
+        sink_id = int(name.replace("sink_", ""))
+        data_dir = image_base / name / label / view / "data"
+
+        if not data_dir.exists():
+            skipped += 1
+            continue
+
+        # Check how many wavelengths are available
+        all_fits = sorted([
+            f for f in data_dir.glob("polaris_detector_nr*.fits*")
+            if "_sed" not in f.name
+        ])
+
+        if not all_fits:
+            skipped += 1
+            continue
+
+        if wavelength_idx >= len(all_fits):
+            if skipped == 0:  # print warning only once
+                print(f"  WARNING: wavelength_idx={wavelength_idx} but only "
+                      f"{len(all_fits)} wavelengths available (0-{len(all_fits)-1})")
+            skipped += 1
+            continue
+
+        fits_file = all_fits[wavelength_idx]
+
+        hdul = pyfits.open(fits_file)
+        tau_map = hdul[0].data[4, 0, :, :]    # plane 4 = optical depth
+        stokes_I = hdul[0].data[0, 0, :, :]   # plane 0 = Stokes I (Jy/px)
+        header = hdul[0].header
+        hdul.close()
+
+        ny, nx = tau_map.shape
+        cdelt_m = header["CDELT1"]
+
+        if aperture_au is not None:
+            cx_pix, cy_pix = nx / 2.0, ny / 2.0
+            yy, xx = np.mgrid[0:ny, 0:nx]
+            r_au = np.sqrt(
+                ((xx - cx_pix) * cdelt_m)**2 +
+                ((yy - cy_pix) * cdelt_m)**2
+            ) / au2m_local
+            mask = r_au <= aperture_au
+            tau_in_ap = tau_map[mask]
+            flux_in_ap = stokes_I[mask]
+        else:
+            tau_in_ap = tau_map.ravel()
+            flux_in_ap = stokes_I.ravel()
+
+        # Flux-weighted mean: τ_w = Σ(τ × I) / Σ(I)
+        flux_sum = np.sum(flux_in_ap)
+        if flux_sum > 0:
+            tau_flux_weighted = np.sum(tau_in_ap * flux_in_ap) / flux_sum
+        else:
+            tau_flux_weighted = 0.0
+
+        sink_ids.append(sink_id)
+        tau_means.append(np.mean(tau_in_ap))
+        tau_maxs.append(np.max(tau_in_ap))
+        tau_medians.append(np.median(tau_in_ap))
+        tau_flux_weighteds.append(tau_flux_weighted)
+
+    if len(sink_ids) == 0:
+        print(f"  WARNING: no sinks processed! Check wavelength_idx={wavelength_idx}. "
+              f"Skipped {skipped} sinks.")
+
+    # Read wavelength from the last opened file for the summary
+    wl_label = ""
+    if len(sink_ids) > 0:
+        hdul = pyfits.open(fits_file)
+        for key in ["WAVELENGTH1", "WAVELENGTH"]:
+            if key in hdul[0].header:
+                wl_m = float(hdul[0].header[key])
+                wl_label = f", λ={wl_m*1e3:.2f} mm"
+                break
+        hdul.close()
+
+    result = {
+        "sink_id": np.array(sink_ids),
+        "tau_mean": np.array(tau_means),
+        "tau_max": np.array(tau_maxs),
+        "tau_median": np.array(tau_medians),
+        "tau_flux_weighted": np.array(tau_flux_weighteds),
+    }
+
+    print(f"  Computed τ for {len(sink_ids)} sinks "
+          f"(view={view}, idx={wavelength_idx}{wl_label}, "
+          f"aperture={aperture_au} AU)")
+
+    return result

@@ -19,7 +19,7 @@ from pathlib import Path
 import numpy as np
 
 from radprocess.constants.constants import (
-    Ggram, M_sun, L_sun, R_sun, sigma, pc2m, au2m,
+    Ggram, M_sun, L_sun, R_sun, sigma
 )
 from radprocess import ramses
 
@@ -46,7 +46,7 @@ def derive_stars_properties(ramses_dir, f_acc=0.1):
     stars : list of dict
         Each dict contains: id, mass_msun, pos_m (list of 3 floats in metres,
         centred on the domain), radius_rsun, luminosity_lsun, temperature_k.
-    boxlen_pc : float
+    boxlen : float
         Domain box length in parsecs (used by callers for coordinate transforms).
     """
     sinks = ramses.read.sink_info(ramses_dir)
@@ -72,7 +72,9 @@ def derive_stars_properties(ramses_dir, f_acc=0.1):
     # For now, compute from sink positions (they are in code units = pc)
     # We need to read it from the info file instead
     info_path = _find_info_file(ramses_dir)
-    boxlen_pc = _read_boxlen(info_path)
+    boxlen = _read_boxlen(info_path)
+    unit_l_cm = _read_unit_l(info_path)
+    unit_l_m  = unit_l_cm * 1e-2
 
     stars = []
     for i in range(sinks.num_sinks):
@@ -96,9 +98,12 @@ def derive_stars_properties(ramses_dir, f_acc=0.1):
         else:
             radius_cm = 1.0 * R_sun
 
+
         # Position centred on the domain, in metres
-        pos_pc = np.array([data[i, x_col], data[i, y_col], data[i, z_col]])
-        pos_m = (pos_pc - boxlen_pc / 2.0) * pc2m
+        pos_code = np.array([data[i, x_col], data[i, y_col], data[i, z_col]])
+        pos_m = (pos_code - boxlen / 2.0) * unit_l_m
+
+        #pos_m = (pos_pc - boxlen_pc / 2.0) * pc2m
 
         stars.append({
             "id": int(data[i, id_col]),
@@ -112,7 +117,7 @@ def derive_stars_properties(ramses_dir, f_acc=0.1):
     print(f"Derived properties for {len(stars)} stars "
           f"(skipped {sinks.num_sinks - len(stars)} without luminosity).")
 
-    return stars, boxlen_pc
+    return stars, boxlen
 
 
 # ============================================================
@@ -148,6 +153,15 @@ def _read_ndust(info_path):
             if stripped.startswith("ndust"):
                 return int(stripped.split("=")[1])
     return 0
+
+def _read_unit_l(info_path):
+    """Read unit_l (length conversion factor, code units → cm) from a RAMSES info file."""
+    with open(info_path, "r") as f:
+        for line in f:
+            stripped = line.strip()
+            if stripped.startswith("unit_l") and "=" in stripped:
+                return float(stripped.split("=")[1])
+    raise ValueError(f"'unit_l' not found in {info_path}")
 
 
 # ============================================================
