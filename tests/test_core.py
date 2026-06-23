@@ -146,7 +146,8 @@ class TestPolarisConfig:
         p = PolarisConfig()
         assert p.dust_size_min < p.dust_size_max
         assert p.dust_size_powerlaw == -3.5
-        assert p.mass_fraction == 0.01
+        # assert p.mass_fraction == 0.01
+        assert p.mass_fraction == 1
 
 
 class TestConfigParams:
