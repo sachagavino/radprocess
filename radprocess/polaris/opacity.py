@@ -199,7 +199,8 @@ def write_opacity_cmd(
     dust_size_max,
     dust_size_powerlaw=-3.5,
     mean_molecular_weight=2.37,
-    mass_fraction=0.01,
+    # mass_fraction=0.01,
+    mass_fraction=1,
     nr_threads=8,
     output_num=0,
 ):
