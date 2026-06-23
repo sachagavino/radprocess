@@ -317,7 +317,7 @@ class PolarisConfig(StrictDataclass):
         metadata={'desc': r'Power-law exponent for the grain size distribution (e.g. -3.5 for MRN).'})
     mean_molecular_weight: float = field(default=2.37,
         metadata={'desc': r'Mean molecular weight (mu) of the gas.'})
-    mass_fraction: float = field(default=0.01,
+    mass_fraction: float = field(default = 1,
         metadata={'desc': r'Dust-to-gas mass fraction.'})
     nr_threads: int = field(default=8,
         metadata={'desc': r'Number of OpenMP threads for POLARIS.'})
