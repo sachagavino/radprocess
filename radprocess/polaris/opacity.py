@@ -350,8 +350,6 @@ def run_polaris(cmd_path, log_path=None, polaris_binary="polaris"):
     if process.returncode != 0:
         raise subprocess.CalledProcessError(process.returncode, command)
 
-    print("\nPOLARIS opacity run completed successfully!\n")
-
 
 # ============================================================
 #  High-level: write cmd + run
