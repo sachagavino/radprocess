@@ -172,7 +172,7 @@ def write_imaging_cmd(
 
     distance_m = distance_pc * pc2m
 
-    print(f"  Writing imaging cmd for '{view_name}' view: {cmd_path}")
+    print(f"Writing imaging cmd for '{view_name}' view: {cmd_path}")
 
     with open(cmd_path, "w") as f:
         # --- <common> block ---
@@ -450,7 +450,7 @@ def render_images(
         log_filename = f"polaris_render_{view_name}_{output_num:05d}.{label}.log"
         log_path = polaris_dir / log_filename
 
-        print(f"\n  Rendering '{view_name}' ({label})...")
+        print(f"\nRendering '{view_name}' ({label})...")
         run_polaris(cmd_path, log_path=log_path, polaris_binary=polaris_binary)
 
         image_dirs[view_name] = view_output
