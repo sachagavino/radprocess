@@ -1273,7 +1273,6 @@ class Pipeline:
 
         # ---- Full-cloud case ----
         if subbox is None:
-            # image_output_dir = Path(self.configparams.dir.pipeline_output) / "images"
             image_output_dir = polaris_dir / "images"
 
             if grid_path is None:
@@ -1360,7 +1359,6 @@ class Pipeline:
             print(f"  Rendering: {name}  ({i+1}/{len(sink_names)})")
             print(f"{'='*60}")
 
-            # image_output_dir = Path(self.configparams.dir.pipeline_output) / "images" / "subboxes" / name
             image_output_dir = polaris_dir / "images" / "subboxes" / name
 
             # Read sink offset (in metres) for detector centering
