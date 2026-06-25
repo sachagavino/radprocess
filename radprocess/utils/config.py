@@ -189,13 +189,19 @@ def fancy_repr(obj) -> str:
 
 class StrictDataclass:
     def __setattr__(self, name, value):
-        if name in {f.name for f in fields(self)}:
+        known_fields = {f.name for f in fields(self)}
+        if name in known_fields:
             expected_type = next(f for f in fields(self) if f.name == name).type
             if not isinstance(value, expected_type):
                 raise TypeError(
-                    f"❌ Error: Field '{name}' expects type {expected_type.__name__}, "
+                    f"Error: Field '{name}' expects type {expected_type.__name__}, "
                     f"got {type(value).__name__}"
                 )
+        else:
+            raise AttributeError(
+                f"Error: '{type(self).__name__}' has no parameter '{name}'. "
+                f"Valid parameters are: {', '.join(sorted(known_fields))}"
+            )
         super().__setattr__(name, value)
 
 
