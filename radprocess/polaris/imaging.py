@@ -455,7 +455,7 @@ def render_images(
 
         image_dirs[view_name] = view_output
 
-    print(f"\nAll {label} images rendered successfully!")
+    print(f"All {label} images rendered successfully!")
     print(f"Output directories: {image_dirs}\n")
 
     return image_dirs
