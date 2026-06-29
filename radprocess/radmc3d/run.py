@@ -75,7 +75,7 @@ def mctherm(radmc_dir, log_path=None, radmc3d_binary="radmc3d"):
     print(f"\nRunning: {' '.join(command)}")
     print(f"Working directory: {radmc_dir}")
     if log_path:
-        print(f"Log file: {log_path}\n")
+        print(f"Log file: {log_path}")
 
     process = subprocess.Popen(
         command,

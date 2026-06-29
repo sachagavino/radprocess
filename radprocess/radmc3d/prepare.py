@@ -407,5 +407,5 @@ def prepare_radmc3d_inputs(
         scattering_mode=scattering_mode,
     )
 
-    print(f"\nAll RADMC-3D input files prepared successfully in: {radmc_dir}\n")
+    print(f"\nAll RADMC-3D input files prepared successfully in: {radmc_dir}")
     return radmc_dir
