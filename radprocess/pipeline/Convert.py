@@ -340,7 +340,7 @@ class Convert:
 
         #---TEMPERATURE SECTION:---
         if has_temp:
-            print("*************************************************")
+            print("\n*************************************************")
             print("---------------ADDING TEMPERATURE----------------")
             # ============================================
             # Everything in cgs for the moment:
@@ -364,7 +364,7 @@ class Convert:
             output['Tgas'] = cells['thermal_pressure'] / cells['density'] * scale_T2
             output['Tdust'] = cells['thermal_pressure'] / cells['density'] * scale_T2
             print("Min Max Mean T", output['Tgas'].min(), output['Tgas'].max(), output['Tgas'].mean())
-            print("*************************************************")
+            print("*************************************************\n")
 
 
         root = self.write_amr_to_zarr(output, nb_species,
