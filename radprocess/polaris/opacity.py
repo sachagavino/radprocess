@@ -194,14 +194,15 @@ def write_opacity_cmd(
     output_path,
     stars,
     n_dust,
-    dust_components,
-    dust_size_min,
-    dust_size_max,
-    dust_size_powerlaw=-3.5,
-    mean_molecular_weight=2.37,
-    mass_fraction=1,
-    nr_threads=8,
-    output_num=0,
+    # dust_components,
+    # dust_size_min,
+    # dust_size_max,
+    # dust_size_powerlaw = -3.5,
+    dust_mixtures,
+    mean_molecular_weight = 2.37,
+    mass_fraction = 1,
+    nr_threads = 1,
+    output_num = 0,
 ):
     """
     Write a POLARIS command file for the opacity-only run.
@@ -245,8 +246,8 @@ def write_opacity_cmd(
     cmd_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Log-spaced size bin edges
-    size_edges = np.logspace(np.log10(dust_size_min),
-                             np.log10(dust_size_max), n_dust + 1)
+    # size_edges = np.logspace(np.log10(dust_size_min),
+    #                          np.log10(dust_size_max), n_dust + 1)
 
     print(f"Writing POLARIS opacity command file: {cmd_path}")
 
@@ -254,14 +255,31 @@ def write_opacity_cmd(
         # --- <common> block ---
         f.write("<common>\n")
 
-        for i in range(n_dust):
-            for comp in dust_components:
+        # for i in range(n_dust):
+        #     for comp in dust_components:
+        #         f.write(
+        #             f'\n\t<dust_component id = "{i}"> '
+        #             f'"{comp["path"]}" "plaw" {comp["weight"]} 0 '
+        #             f'{size_edges[i]:.2e} {size_edges[i+1]:.2e} '
+        #             f'{dust_size_powerlaw}'
+        #         )
+
+        for mixture, components in dust_mixtures.items():
+            for component in components.values():
                 f.write(
-                    f'\n\t<dust_component id = "{i}"> '
-                    f'"{comp["path"]}" "plaw" {comp["weight"]} 0 '
-                    f'{size_edges[i]:.2e} {size_edges[i+1]:.2e} '
-                    f'{dust_size_powerlaw}'
+                    f'\n\t<dust_component id = "{mixture}"> '
+                    f'"{component["path"]}" '
+                    f'"{component["distribution"]}" '
+                    f'{component["fraction"]} '
+                    f'{component["density"]} '
+                    f'{component["amin"]:.2e} '
+                    f'{component["amax"]:.2e}'
                 )
+                index = component['index'] if isinstance(component['index'], list) else [component['index']]
+                for i in index:
+                    f.write(
+                        f' {i}'
+                    )
 
         f.write(f"\n\n\t<nr_threads> {nr_threads}\n")
         f.write("\n</common>\n")
@@ -359,17 +377,18 @@ def run_opacity(
     ramses_dir,
     polaris_dir,
     grid_path,
-    dust_components,
-    dust_size_min,
-    dust_size_max,
-    dust_size_powerlaw=-3.5,
-    mean_molecular_weight=2.37,
-    mass_fraction=0.01,
-    nr_threads=8,
-    f_acc=0.1,
-    n_dust_override=None,
-    polaris_binary="polaris",
-    cleanup=True,
+    # dust_components,
+    # dust_size_min,
+    # dust_size_max,
+    # dust_size_powerlaw = -3.5,
+    dust_mixtures,
+    mean_molecular_weight = 2.37,
+    mass_fraction = 0.01,
+    nr_threads = 1,
+    f_acc = 0.1,
+    n_dust_override = None,
+    polaris_binary = "polaris",
+    cleanup = True,
 ):
     """
     Full Step 4: derive stellar properties, write the POLARIS command file,
@@ -440,19 +459,20 @@ def run_opacity(
     cmd_path = polaris_dir / cmd_filename
 
     write_opacity_cmd(
-        cmd_path=cmd_path,
-        grid_path=grid_path,
-        output_path=polaris_dir,
-        stars=stars,
-        n_dust=n_dust,
-        dust_components=dust_components,
-        dust_size_min=dust_size_min,
-        dust_size_max=dust_size_max,
-        dust_size_powerlaw=dust_size_powerlaw,
-        mean_molecular_weight=mean_molecular_weight,
-        mass_fraction=mass_fraction,
-        nr_threads=nr_threads,
-        output_num=output_num,
+        cmd_path = cmd_path,
+        grid_path = grid_path,
+        output_path = polaris_dir,
+        stars = stars,
+        n_dust = n_dust,
+        # dust_components = dust_components,
+        # dust_size_min = dust_size_min,
+        # dust_size_max = dust_size_max,
+        # dust_size_powerlaw = dust_size_powerlaw,
+        dust_mixtures = dust_mixtures,
+        mean_molecular_weight = mean_molecular_weight,
+        mass_fraction = mass_fraction,
+        nr_threads = nr_threads,
+        output_num = output_num
     )
 
     # 5) Cleanup previous run

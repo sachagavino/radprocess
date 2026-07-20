@@ -544,17 +544,18 @@ class Pipeline:
 
     def run_polaris_opacity(
         self,
-        dust_components,
-        dust_size_min=None,
-        dust_size_max=None,
-        dust_size_powerlaw=None,
-        mean_molecular_weight=None,
-        mass_fraction=None,
-        nr_threads=None,
-        grid_path=None,
-        n_dust_override=None,
-        polaris_binary=None,
-        cleanup=True,
+        # dust_components,
+        # dust_size_min = None,
+        # dust_size_max = None,
+        # dust_size_powerlaw = None,
+        dust_mixtures,
+        mean_molecular_weight = None,
+        mass_fraction = None,
+        nr_threads = None,
+        grid_path = None,
+        n_dust_override = None,
+        polaris_binary = None,
+        cleanup = True,
     ):
         """
         Run POLARIS with 1 photon package to generate dust opacity tables.
@@ -609,12 +610,12 @@ class Pipeline:
         pc = self.configparams.polaris
 
         # Use dataclass defaults for any parameter not explicitly set
-        if dust_size_min is None:
-            dust_size_min = pc.dust_size_min
-        if dust_size_max is None:
-            dust_size_max = pc.dust_size_max
-        if dust_size_powerlaw is None:
-            dust_size_powerlaw = pc.dust_size_powerlaw
+        # if dust_size_min is None:
+        #     dust_size_min = pc.dust_size_min
+        # if dust_size_max is None:
+        #     dust_size_max = pc.dust_size_max
+        # if dust_size_powerlaw is None:
+        #     dust_size_powerlaw = pc.dust_size_powerlaw
         if mean_molecular_weight is None:
             mean_molecular_weight = pc.mean_molecular_weight
         if mass_fraction is None:
@@ -636,20 +637,21 @@ class Pipeline:
             print(f"Auto-detected POLARIS grid: {grid_path}")
 
         data_dir = run_opacity(
-            ramses_dir=ramses_dir,
-            polaris_dir=polaris_dir,
-            grid_path=grid_path,
-            dust_components=dust_components,
-            dust_size_min=dust_size_min,
-            dust_size_max=dust_size_max,
-            dust_size_powerlaw=dust_size_powerlaw,
-            mean_molecular_weight=mean_molecular_weight,
-            mass_fraction=mass_fraction,
-            nr_threads=nr_threads,
-            f_acc=f_acc,
-            n_dust_override=n_dust_override,
-            polaris_binary=polaris_binary,
-            cleanup=cleanup,
+            ramses_dir = ramses_dir,
+            polaris_dir = polaris_dir,
+            grid_path = grid_path,
+            # dust_components = dust_components,
+            # dust_size_min = dust_size_min,
+            # dust_size_max = dust_size_max,
+            # dust_size_powerlaw = dust_size_powerlaw,
+            dust_mixtures = dust_mixtures,
+            mean_molecular_weight = mean_molecular_weight,
+            mass_fraction = mass_fraction,
+            nr_threads = nr_threads,
+            f_acc = f_acc,
+            n_dust_override = n_dust_override,
+            polaris_binary = polaris_binary,
+            cleanup = cleanup,
         )
 
         return data_dir
