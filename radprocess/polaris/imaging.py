@@ -70,26 +70,27 @@ def write_imaging_cmd(
     output_path,
     view_name,
     view_details,
-    dust_components,
+    # dust_components,
     n_dust,
-    dust_size_min,
-    dust_size_max,
-    dust_size_powerlaw,
+    # dust_size_min,
+    # dust_size_max,
+    # dust_size_powerlaw,
+    dust_mixtures,
     mean_molecular_weight,
     mass_fraction,
     npix,
     distance_pc,
     wavelengths_mm,
-    nr_threads=8,
-    midplane_zoom=1,
-    fov_m=None,
-    polaris_cmd="CMD_DUST_EMISSION",
-    alignment="ALIG_PA",
-    peel_off=True,
-    acceptance_angle=None,
-    nr_photons_scat=None,
-    source_star_scat=None,
-    detector_shift_m=None,
+    nr_threads = 1,
+    midplane_zoom = 1,
+    fov_m = None,
+    polaris_cmd = "CMD_DUST_EMISSION",
+    alignment = "ALIG_PA",
+    peel_off = True,
+    acceptance_angle = None,
+    nr_photons_scat = None,
+    source_star_scat = None,
+    detector_shift_m = None,
 ):
     """
     Write a POLARIS command file for dust continuum imaging at a
@@ -167,8 +168,8 @@ def write_imaging_cmd(
     cmd_path = Path(cmd_path)
     cmd_path.parent.mkdir(parents=True, exist_ok=True)
 
-    size_edges = np.logspace(np.log10(dust_size_min),
-                             np.log10(dust_size_max), n_dust + 1)
+    # size_edges = np.logspace(np.log10(dust_size_min),
+    #                          np.log10(dust_size_max), n_dust + 1)
 
     distance_m = distance_pc * pc2m
 
@@ -178,14 +179,31 @@ def write_imaging_cmd(
         # --- <common> block ---
         f.write("<common>\n")
 
-        for i in range(n_dust):
-            for comp in dust_components:
+        # for i in range(n_dust):
+        #     for comp in dust_components:
+        #         f.write(
+        #             f'\n\t<dust_component id = "{i}"> '
+        #             f'"{comp["path"]}" "plaw" {comp["weight"]} 0 '
+        #             f'{size_edges[i]:.2e} {size_edges[i+1]:.2e} '
+        #             f'{dust_size_powerlaw}'
+        #         )
+
+        for mixture, components in dust_mixtures.items():
+            for component in components.values():
                 f.write(
-                    f'\n\t<dust_component id = "{i}"> '
-                    f'"{comp["path"]}" "plaw" {comp["weight"]} 0 '
-                    f'{size_edges[i]:.2e} {size_edges[i+1]:.2e} '
-                    f'{dust_size_powerlaw}'
+                    f'\n\t<dust_component id = "{mixture}"> '
+                    f'"{component["path"]}" '
+                    f'"{component["distribution"]}" '
+                    f'{component["fraction"]} '
+                    f'{component["density"]} '
+                    f'{component["amin"]:.2e} '
+                    f'{component["amax"]:.2e}'
                 )
+                index = component['index'] if isinstance(component['index'], list) else [component['index']]
+                for i in index:
+                    f.write(
+                        f' {i}'
+                    )
 
         f.write(f"\n\n\t<nr_threads> {nr_threads}\n")
         f.write("\n</common>\n")
@@ -303,31 +321,32 @@ def render_images(
     polaris_dir,
     image_output_dir,
     grid_path,
-    dust_components,
+    # dust_components,
     n_dust,
-    dust_size_min,
-    dust_size_max,
-    dust_size_powerlaw,
+    # dust_size_min,
+    # dust_size_max,
+    # dust_size_powerlaw,
+    dust_mixtures,
     mean_molecular_weight,
     mass_fraction,
     npix,
     distance_pc,
     wavelengths_mm,
-    views=None,
-    nr_threads=8,
-    midplane_zoom=1,
-    fov_m=None,
-    output_num=0,
-    polaris_binary="polaris",
-    label="whole",
-    cleanup_views=True,
-    polaris_cmd="CMD_DUST_EMISSION",
-    alignment="ALIG_PA",
-    peel_off=True,
-    acceptance_angle=None,
-    nr_photons_scat=None,
-    source_star_scat=None,
-    detector_shift_m=None,
+    views = None,
+    nr_threads = 1,
+    midplane_zoom = 1,
+    fov_m = None,
+    output_num = 0,
+    polaris_binary = "polaris",
+    label = "whole",
+    cleanup_views = True,
+    polaris_cmd = "CMD_DUST_EMISSION",
+    alignment = "ALIG_PA",
+    peel_off = True,
+    acceptance_angle = None,
+    nr_photons_scat = None,
+    source_star_scat = None,
+    detector_shift_m = None,
 ):
     """
     Full Step 8: write POLARIS imaging command files and execute them
@@ -419,31 +438,32 @@ def render_images(
         cmd_path = polaris_dir / cmd_filename
 
         write_imaging_cmd(
-            cmd_path=cmd_path,
-            grid_path=grid_path,
-            output_path=view_output,
-            view_name=view_name,
-            view_details=view_details,
-            dust_components=dust_components,
-            n_dust=n_dust,
-            dust_size_min=dust_size_min,
-            dust_size_max=dust_size_max,
-            dust_size_powerlaw=dust_size_powerlaw,
-            mean_molecular_weight=mean_molecular_weight,
-            mass_fraction=mass_fraction,
-            npix=npix,
-            distance_pc=distance_pc,
-            wavelengths_mm=wavelengths_mm,
-            nr_threads=nr_threads,
-            midplane_zoom=midplane_zoom,
-            fov_m=fov_m,
-            polaris_cmd=polaris_cmd,
-            alignment=alignment,
-            peel_off=peel_off,
-            acceptance_angle=acceptance_angle,
-            nr_photons_scat=nr_photons_scat,
-            source_star_scat=source_star_scat,
-            detector_shift_m=detector_shift_m,
+            cmd_path = cmd_path,
+            grid_path = grid_path,
+            output_path = view_output,
+            view_name = view_name,
+            view_details = view_details,
+            # dust_components = dust_components,
+            n_dust = n_dust,
+            # dust_size_min = dust_size_min,
+            # dust_size_max = dust_size_max,
+            # dust_size_powerlaw = dust_size_powerlaw,
+            dust_mixtures = dust_mixtures,
+            mean_molecular_weight = mean_molecular_weight,
+            mass_fraction = mass_fraction,
+            npix = npix,
+            distance_pc = distance_pc,
+            wavelengths_mm = wavelengths_mm,
+            nr_threads = nr_threads,
+            midplane_zoom = midplane_zoom,
+            fov_m = fov_m,
+            polaris_cmd = polaris_cmd,
+            alignment = alignment,
+            peel_off = peel_off,
+            acceptance_angle = acceptance_angle,
+            nr_photons_scat = nr_photons_scat,
+            source_star_scat = source_star_scat,
+            detector_shift_m = detector_shift_m,
         )
 
         # Run POLARIS
