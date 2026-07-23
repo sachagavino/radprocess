@@ -298,7 +298,7 @@ def write_opacity_cmd(
                 f"{r_rsun:17.10e} {temp:17.10e}"
             )
 
-        f.write('\n\t<source_isrf nr_photons = "1">  1\n')
+        # f.write('\n\t<source_isrf nr_photons = "1">  1\n')
 
         f.write(f'\n\t<path_grid> "{grid_path}"')
         # POLARIS expects trailing slash on output path
