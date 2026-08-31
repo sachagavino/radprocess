@@ -82,7 +82,7 @@ def write_imaging_cmd(
     distance_pc,
     wavelengths_mm,
     nr_threads = 1,
-    midplane_zoom = 1,
+    # midplane_zoom = 1,
     fov_m = None,
     polaris_cmd = "CMD_DUST_EMISSION",
     alignment = "ALIG_PA",
@@ -258,7 +258,7 @@ def write_imaging_cmd(
         f.write(f"\n\t<write_inp_midplanes> {npix}")
         f.write(f"\n\t<write_3d_midplanes> {plane_id} {npix}\n")
 
-        f.write(f"\n\t<midplane_zoom> {midplane_zoom}\n")
+        # f.write(f"\n\t<midplane_zoom> {midplane_zoom}\n")
 
         axis1 = view_details["axis1"]
         axis2 = view_details["axis2"]
@@ -334,7 +334,7 @@ def render_images(
     wavelengths_mm,
     views = None,
     nr_threads = 1,
-    midplane_zoom = 1,
+    # midplane_zoom = 1,
     fov_m = None,
     output_num = 0,
     polaris_binary = "polaris",
@@ -412,7 +412,7 @@ def render_images(
     print(f"  Wavelengths: {wavelengths_mm} mm")
     print(f"  Resolution:  {npix} x {npix} px")
     print(f"  Distance:    {distance_pc} pc")
-    print(f"  Zoom:        {midplane_zoom}x")
+    # print(f"  Zoom:        {midplane_zoom}x")
     print(f"  Label:       {label}\n")
 
     image_dirs = {}
@@ -455,7 +455,7 @@ def render_images(
             distance_pc = distance_pc,
             wavelengths_mm = wavelengths_mm,
             nr_threads = nr_threads,
-            midplane_zoom = midplane_zoom,
+            # midplane_zoom = midplane_zoom,
             fov_m = fov_m,
             polaris_cmd = polaris_cmd,
             alignment = alignment,
