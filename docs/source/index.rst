@@ -15,3 +15,4 @@ It was originally created to use RAMSES multi-fluid simulations and to generate 
    subboxes
    inputoutput
    convert
+   parameters
