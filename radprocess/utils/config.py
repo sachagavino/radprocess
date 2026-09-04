@@ -320,7 +320,7 @@ class DustConfig(StrictDataclass):
     # NOTE: default was inconsistent in the old code (1.0 in run_opacity vs 0.01 in
     # the wrapper). Consolidated to the ISM-conventional dust-to-gas ratio 0.01.
     # Change here if your setup expects a different value.
-    mass_fraction: float = field(default=0.01,
+    mass_fraction: float = field(default=1.,
         metadata={'desc': r'Total dust-to-gas mass fraction (written as POLARIS <mass_fraction>).'})
 
     def validate(self):
