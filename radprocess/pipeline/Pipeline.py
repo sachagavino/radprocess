@@ -1207,6 +1207,11 @@ class Pipeline:
         nr_threads = _resolve(nr_threads, pc.nr_threads)
         polaris_binary = _resolve(polaris_binary, pc.polaris_binary)
 
+        # Imaging extras taken straight from config (no per-call override).
+        custom_views = img.custom_views
+        scat_source_radius_rsun = img.scat_source_radius_rsun
+        scat_source_temp_k = img.scat_source_temp_k
+
         # Required fields (no safe default): fail early with a clear message.
         if not dust_mixtures:
             raise ValueError(
@@ -1267,6 +1272,7 @@ class Pipeline:
                 distance_pc = distance_pc,
                 wavelengths_mm = wavelengths_mm,
                 views = views,
+                custom_views = custom_views,
                 nr_threads = nr_threads,
                 fov_m = fov_m,
                 output_num = output_num,
@@ -1279,6 +1285,8 @@ class Pipeline:
                 acceptance_angle = acceptance_angle,
                 nr_photons_scat = nr_photons_scat,
                 source_star_scat = source_star_scat,
+                scat_source_radius_rsun = scat_source_radius_rsun,
+                scat_source_temp_k = scat_source_temp_k,
             )
 
         # ---- Subbox case ----
@@ -1365,6 +1373,7 @@ class Pipeline:
                 distance_pc = distance_pc,
                 wavelengths_mm = wavelengths_mm,
                 views = views,
+                custom_views = custom_views,
                 nr_threads = nr_threads,
                 fov_m = subbox_fov_m,
                 output_num = output_num,
@@ -1377,6 +1386,8 @@ class Pipeline:
                 acceptance_angle = acceptance_angle,
                 nr_photons_scat = nr_photons_scat,
                 source_star_scat = source_star_scat,
+                scat_source_radius_rsun = scat_source_radius_rsun,
+                scat_source_temp_k = scat_source_temp_k,
                 detector_shift_m = sink_offset_m,
             )
 

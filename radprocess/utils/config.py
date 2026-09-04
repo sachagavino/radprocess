@@ -405,7 +405,9 @@ class ImagingConfig(StrictDataclass):
     wavelengths_mm: list = field(default_factory=list,
         metadata={'desc': r'Wavelengths to image, in millimetres. REQUIRED (non-empty list).'})
     views: list = field(default_factory=lambda: ["xy", "xz", "yz"],
-        metadata={'desc': r'Default viewing angles to render. Available: xy, xz, yz.'})
+        metadata={'desc': r'Default viewing angles to render. Built-in: xy, xz, yz; extend via custom_views.'})
+    custom_views: dict = field(default_factory=dict,
+        metadata={'desc': r'User-defined views merged over the built-ins: {name: {plane_id, axis1, axis2, theta, phi}}.'})
     fov_au: Optional[float] = field(default=None,
         metadata={'desc': r'[AU] Field of view (full width). None = full grid extent.'})
     polaris_cmd: str = field(default="CMD_DUST_EMISSION",
@@ -418,6 +420,10 @@ class ImagingConfig(StrictDataclass):
         metadata={'desc': r'[deg] Acceptance angle for scattered light. None = POLARIS default.'})
     nr_photons_scat: Optional[int] = field(default=None,
         metadata={'desc': r'Number of photon packages for the scattering Monte Carlo. None = no scattering source.'})
+    scat_source_radius_rsun: float = field(default=1.0,
+        metadata={'desc': r'[Rsun] Radius of the default scattering source star (used when nr_photons_scat is set but no explicit source is given).'})
+    scat_source_temp_k: float = field(default=5000.0,
+        metadata={'desc': r'[K] Temperature of the default scattering source star.'})
 
     def validate(self):
         if self.distance_pc is None:

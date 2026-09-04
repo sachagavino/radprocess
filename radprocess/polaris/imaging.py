@@ -70,11 +70,7 @@ def write_imaging_cmd(
     output_path,
     view_name,
     view_details,
-    # dust_components,
     n_dust,
-    # dust_size_min,
-    # dust_size_max,
-    # dust_size_powerlaw,
     dust_mixtures,
     mean_molecular_weight,
     mass_fraction,
@@ -82,7 +78,6 @@ def write_imaging_cmd(
     distance_pc,
     wavelengths_mm,
     nr_threads = 1,
-    # midplane_zoom = 1,
     fov_m = None,
     polaris_cmd = "CMD_DUST_EMISSION",
     alignment = "ALIG_PA",
@@ -90,6 +85,8 @@ def write_imaging_cmd(
     acceptance_angle = None,
     nr_photons_scat = None,
     source_star_scat = None,
+    scat_source_radius_rsun = 1.0,
+    scat_source_temp_k = 5000.0,
     detector_shift_m = None,
 ):
     """
@@ -248,10 +245,10 @@ def write_imaging_cmd(
                         f"{r_rsun:17.10e} {temp:17.10e}"
                     )
             else:
-                # Default point source at origin
+                # Default point source at origin, with configurable radius/temp.
                 f.write(
                     f'\n\t<source_star nr_photons = "{nr_photons_scat}"> '
-                    f"0.0 0.0 0.0 1.0 5000.0"
+                    f"0.0 0.0 0.0 {scat_source_radius_rsun} {scat_source_temp_k}"
                 )
 
         plane_id = view_details["plane_id"]
@@ -321,11 +318,7 @@ def render_images(
     polaris_dir,
     image_output_dir,
     grid_path,
-    # dust_components,
     n_dust,
-    # dust_size_min,
-    # dust_size_max,
-    # dust_size_powerlaw,
     dust_mixtures,
     mean_molecular_weight,
     mass_fraction,
@@ -333,8 +326,8 @@ def render_images(
     distance_pc,
     wavelengths_mm,
     views = None,
+    custom_views = None,
     nr_threads = 1,
-    # midplane_zoom = 1,
     fov_m = None,
     output_num = 0,
     polaris_binary = "polaris",
@@ -346,6 +339,8 @@ def render_images(
     acceptance_angle = None,
     nr_photons_scat = None,
     source_star_scat = None,
+    scat_source_radius_rsun = 1.0,
+    scat_source_temp_k = 5000.0,
     detector_shift_m = None,
 ):
     """
@@ -408,23 +403,27 @@ def render_images(
     if views is None:
         views = ["xy", "xz", "yz"]
 
+    # User-defined views override / extend the built-in axis-aligned ones.
+    available_views = dict(STANDARD_VIEWS)
+    if custom_views:
+        available_views.update(custom_views)
+
     print(f"\nRendering {len(views)} views: {views}")
     print(f"  Wavelengths: {wavelengths_mm} mm")
     print(f"  Resolution:  {npix} x {npix} px")
     print(f"  Distance:    {distance_pc} pc")
-    # print(f"  Zoom:        {midplane_zoom}x")
     print(f"  Label:       {label}\n")
 
     image_dirs = {}
 
     for view_name in views:
-        if view_name not in STANDARD_VIEWS:
+        if view_name not in available_views:
             raise ValueError(
                 f"Unknown view '{view_name}'. "
-                f"Available: {list(STANDARD_VIEWS.keys())}"
+                f"Available: {list(available_views.keys())}"
             )
 
-        view_details = STANDARD_VIEWS[view_name]
+        view_details = available_views[view_name]
         view_output = image_output_dir / label / view_name
         view_output.mkdir(parents=True, exist_ok=True)
 
@@ -443,11 +442,7 @@ def render_images(
             output_path = view_output,
             view_name = view_name,
             view_details = view_details,
-            # dust_components = dust_components,
             n_dust = n_dust,
-            # dust_size_min = dust_size_min,
-            # dust_size_max = dust_size_max,
-            # dust_size_powerlaw = dust_size_powerlaw,
             dust_mixtures = dust_mixtures,
             mean_molecular_weight = mean_molecular_weight,
             mass_fraction = mass_fraction,
@@ -455,7 +450,6 @@ def render_images(
             distance_pc = distance_pc,
             wavelengths_mm = wavelengths_mm,
             nr_threads = nr_threads,
-            # midplane_zoom = midplane_zoom,
             fov_m = fov_m,
             polaris_cmd = polaris_cmd,
             alignment = alignment,
@@ -463,6 +457,8 @@ def render_images(
             acceptance_angle = acceptance_angle,
             nr_photons_scat = nr_photons_scat,
             source_star_scat = source_star_scat,
+            scat_source_radius_rsun = scat_source_radius_rsun,
+            scat_source_temp_k = scat_source_temp_k,
             detector_shift_m = detector_shift_m,
         )
 

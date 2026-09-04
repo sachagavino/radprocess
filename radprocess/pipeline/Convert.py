@@ -259,6 +259,13 @@ class Convert:
         #---DENSITY SECTION:---
         #output["density"] = cells["density"]
 
+        # Honour the multi-grain switch. When disabled, ignore any per-bin
+        # dust data (ratios / fluids) even if present in the RAMSES output,
+        # and fall back to a single dust species with rho_dust = dtogas * rho.
+        if not getattr(sim_param, "use_multi_grain", True):
+            has_ratio = False
+            has_fluids = False
+
 
         if has_ratio:
             #IMPORTANT: Here, ramses dumps the total density = rho_g + rho_d in units of mu micron.(so density is not the actual gas density)
