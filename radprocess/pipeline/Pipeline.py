@@ -13,6 +13,18 @@ from radprocess import radmc3d
 from radprocess import ramses
 from radprocess.utils.config import ConfigParams
 
+
+def _resolve(value, fallback):
+    """Return `value` unless it is None, in which case fall back to the config default.
+
+    This is the single convention for method-argument / config interplay:
+    every config-backed argument defaults to None in the signature and is
+    resolved here, so an explicit call value always wins and an omitted one
+    inherits configparams.
+    """
+    return fallback if value is None else value
+
+
 class Pipeline:
 
     def __init__(self):
@@ -326,59 +338,6 @@ class Pipeline:
         )
 
   
-    def thermal_radmc3d(self,
-                        run=True, 
-                        nphot=1e4, 
-                        write_opac=True,
-                        write_control=True, 
-                        write_star=True, 
-                        write_wave=True, 
-                        write_mcmono=True, 
-                        write_ext=True, 
-                        **keywords):
-        """ 
-        Notes:
-        run MC dust radiative transfer, open the resulting dust temperature as an array 
-        and computes the surface-area weigthed temperature. If run == False, user assumes
-        the RADMC3D output files already exist.
-        -----
-	    """	
-        self.write_radmc3d(nphot_therm=nphot, 
-                           write_opac=write_opac, 
-                           write_control=write_control, 
-                           write_star=write_star, 
-                           write_wave=write_wave, 
-                           write_mcmono=write_mcmono, 
-                           write_ext=write_ext, 
-                           **keywords)
-
-        if write_control == False or write_opac == False or write_star == False or write_wave == False:
-            print('WARNING: most RADMC3D input files will not be created. Will continue..\
-                   but errors can be raised if one or more required input files are missing.\n')
-
-        if run == True:
-            self.run_thermal_radmc3d(nphot=nphot, **keywords)
-
-
-    def write_radmc3d(self, 
-                      write_dens, 
-                      write_grid, 
-                      write_opac, 
-                      write_control, 
-                      write_star, 
-                      write_wave, 
-                      write_mcmono, 
-                      write_ext, 
-                      **keywords):
-        print('\nWRITING RADMC3D INPUT FILES:')
-        print('----------------------------\n')
-        #os.system("rm thermal/*.inp")
-        if not os.path.exists('thermal'):
-            os.makedirs('thermal')
-
-        if write_control==True:
-            radmc3d.write.control(**keywords)
-
     def load_ramses(self):
         """
         read RAMSES files, convert into AMR and store
@@ -544,11 +503,7 @@ class Pipeline:
 
     def run_polaris_opacity(
         self,
-        # dust_components,
-        # dust_size_min = None,
-        # dust_size_max = None,
-        # dust_size_powerlaw = None,
-        dust_mixtures,
+        dust_mixtures = None,
         mean_molecular_weight = None,
         mass_fraction = None,
         nr_threads = None,
@@ -563,37 +518,29 @@ class Pipeline:
         This is Step 4 of the pipeline. It requires that a POLARIS grid
         file already exists (from convert_to_polaris, Step 2).
 
-        Parameters default to values in configparams.polaris when not
-        explicitly provided. dust_components must always be provided
-        explicitly since it contains file paths specific to the user's setup.
+        Every argument below defaults to None and, when left as None, is
+        resolved from the configuration object: the dust setup from
+        configparams.dust and the execution settings from configparams.polaris.
+        Pass an argument explicitly only to override the config for this call.
 
         Parameters
         ----------
-        dust_components : list of dict
-            Dust material definitions. Each dict has:
-                path (str): path to the .nk or .cs file
-                weight (float): mass fraction weight
-            Example:
-                [{"path": "/path/silicate.cs", "weight": 0.625},
-                 {"path": "/path/carbon.cs",   "weight": 0.375}]
-        dust_size_min : float or None
-            Minimum grain radius in metres.
-        dust_size_max : float or None
-            Maximum grain radius in metres.
-        dust_size_powerlaw : float or None
-            Power-law exponent (default -3.5 for MRN).
+        dust_mixtures : dict or None
+            Dust material definitions. If None, uses configparams.dust.mixtures.
+            See DustConfig for the expected structure.
         mean_molecular_weight : float or None
-            Gas mean molecular weight.
+            Gas mean molecular weight. If None, uses configparams.dust.mean_molecular_weight.
         mass_fraction : float or None
-            Dust-to-gas mass fraction.
+            Total dust-to-gas mass fraction. If None, uses configparams.dust.mass_fraction.
         nr_threads : int or None
-            Number of OpenMP threads.
+            Number of OpenMP threads. If None, uses configparams.polaris.nr_threads.
         grid_path : str or Path or None
             Path to the POLARIS grid file. If None, auto-detected.
         n_dust_override : int or None
             Override the number of dust species.
         polaris_binary : str or None
-            Name or path of the POLARIS executable.
+            Name or path of the POLARIS executable. If None, uses
+            configparams.polaris.polaris_binary.
         cleanup : bool
             If True, remove previous POLARIS run outputs before starting.
 
@@ -607,23 +554,21 @@ class Pipeline:
         ramses_dir = self.configparams.dir.ramses_output
         polaris_dir = self.polaris_outputs_dir
         f_acc = self.configparams.sim.facc
+        dust = self.configparams.dust
         pc = self.configparams.polaris
 
-        # Use dataclass defaults for any parameter not explicitly set
-        # if dust_size_min is None:
-        #     dust_size_min = pc.dust_size_min
-        # if dust_size_max is None:
-        #     dust_size_max = pc.dust_size_max
-        # if dust_size_powerlaw is None:
-        #     dust_size_powerlaw = pc.dust_size_powerlaw
-        if mean_molecular_weight is None:
-            mean_molecular_weight = pc.mean_molecular_weight
-        if mass_fraction is None:
-            mass_fraction = pc.mass_fraction
-        if nr_threads is None:
-            nr_threads = pc.nr_threads
-        if polaris_binary is None:
-            polaris_binary = pc.polaris_binary
+        # Resolve arguments against the config (explicit call value wins).
+        dust_mixtures = _resolve(dust_mixtures, dust.mixtures)
+        mean_molecular_weight = _resolve(mean_molecular_weight, dust.mean_molecular_weight)
+        mass_fraction = _resolve(mass_fraction, dust.mass_fraction)
+        nr_threads = _resolve(nr_threads, pc.nr_threads)
+        polaris_binary = _resolve(polaris_binary, pc.polaris_binary)
+
+        if not dust_mixtures:
+            raise ValueError(
+                "No dust mixtures available: set configparams.dust.mixtures "
+                "or pass dust_mixtures=... (see DustConfig for the structure)."
+            )
 
         # Auto-detect grid file if not provided
         if grid_path is None:
@@ -640,10 +585,6 @@ class Pipeline:
             ramses_dir = ramses_dir,
             polaris_dir = polaris_dir,
             grid_path = grid_path,
-            # dust_components = dust_components,
-            # dust_size_min = dust_size_min,
-            # dust_size_max = dust_size_max,
-            # dust_size_powerlaw = dust_size_powerlaw,
             dust_mixtures = dust_mixtures,
             mean_molecular_weight = mean_molecular_weight,
             mass_fraction = mass_fraction,
@@ -664,8 +605,13 @@ class Pipeline:
         wave_max=None,
         n_wavelengths=None,
         nphot=None,
+        nphot_scat=None,
         setthreads=None,
         scattering_mode=None,
+        scattering_mode_max=None,
+        modified_random_walk=None,
+        rto_style=None,
+        rto_single=None,
         subbox=False,
     ):
         """
@@ -703,7 +649,9 @@ class Pipeline:
         radmc_dir : Path
             The RADMC-3D directory containing all input files.
         """
-        from radprocess.radmc3d.prepare import prepare_radmc3d_inputs
+        from radprocess.radmc3d.prepare import (
+            prepare_radmc3d_inputs, write_radmc3d_control,
+        )
         import shutil
 
         ramses_dir = self.configparams.dir.ramses_output
@@ -724,6 +672,16 @@ class Pipeline:
             setthreads = rc.setthreads
         if scattering_mode is None:
             scattering_mode = rc.scattering_mode
+        if nphot_scat is None:
+            nphot_scat = rc.nphot_scat
+        if scattering_mode_max is None:
+            scattering_mode_max = rc.scattering_mode_max
+        if modified_random_walk is None:
+            modified_random_walk = rc.modified_random_walk
+        if rto_style is None:
+            rto_style = rc.rto_style
+        if rto_single is None:
+            rto_single = rc.rto_single
 
         if polaris_data_dir is None:
             polaris_data_dir = self.polaris_outputs_dir / "data"
@@ -743,8 +701,13 @@ class Pipeline:
             wave_max=wave_max,
             n_wavelengths=n_wavelengths,
             nphot=nphot,
+            nphot_scat=nphot_scat,
             setthreads=setthreads,
             scattering_mode=scattering_mode,
+            scattering_mode_max=scattering_mode_max,
+            modified_random_walk=modified_random_walk,
+            rto_style=rto_style,
+            rto_single=rto_single,
         )
 
         # Distribute shared files to subbox folders
@@ -848,58 +811,42 @@ class Pipeline:
                         sf.write(f"-{teff_K:e}\n")
 
                     # ---- Per-sink radmc3d.inp with subbox_* parameters ----
-                    # The grid is padded (bigger than requested FOV) so the
-                    # octree is artifact-free. The subbox_* parameters tell
-                    # RADMC-3D's subbox_regrid to output a cube centered on
-                    # the sink at the user's requested FOV.
-                    shared_radmc3d_inp = radmc_dir / "radmc3d.inp"
-                    if shared_radmc3d_inp.exists():
-                        with open(shared_radmc3d_inp, "r") as rf:
-                            base_content = rf.read()
-                    else:
-                        base_content = (
-                            f"nphot = {int(nphot)}\n"
-                            f"nphot_scat = {int(nphot)}\n"
-                            f"setthreads = {setthreads}\n"
-                            f"scattering_mode = {scattering_mode}\n"
-                            f"scattering_mode_max = {scattering_mode}\n"
-                            f"modified_random_walk = 1\n"
-                            f"rto_style = 3\n"
-                            f"rto_single = 1\n"
-                        )
-
+                    # Regenerate from config (single source of truth) and add
+                    # the subbox_regrid cube centered on the sink at its FOV.
+                    # The grid is padded (bigger than the requested FOV) so the
+                    # octree is artifact-free. subbox_* are the "long tail"
+                    # radmc3d.inp keys, passed via extra_options rather than the
+                    # writer's core signature.
+                    subbox_opts = {}
                     fov_file = sink_dir / "requested_hw_au.txt"
-                    subbox_lines = ""
                     if fov_file.exists():
                         from radprocess.constants.constants import au2cm
-                        req_hw_au = float(np.loadtxt(fov_file))
-                        req_hw_cm = req_hw_au * au2cm
+                        req_hw_cm = float(np.loadtxt(fov_file)) * au2cm
                         subbox_npix = 128
+                        subbox_opts = {
+                            "subbox_nx": subbox_npix,
+                            "subbox_ny": subbox_npix,
+                            "subbox_nz": subbox_npix,
+                            "subbox_x0": f"{star_x - req_hw_cm:.6e}",
+                            "subbox_x1": f"{star_x + req_hw_cm:.6e}",
+                            "subbox_y0": f"{star_y - req_hw_cm:.6e}",
+                            "subbox_y1": f"{star_y + req_hw_cm:.6e}",
+                            "subbox_z0": f"{star_z - req_hw_cm:.6e}",
+                            "subbox_z1": f"{star_z + req_hw_cm:.6e}",
+                        }
 
-                        # Center the regrid cube on the sink position
-                        sx0 = star_x - req_hw_cm
-                        sx1 = star_x + req_hw_cm
-                        sy0 = star_y - req_hw_cm
-                        sy1 = star_y + req_hw_cm
-                        sz0 = star_z - req_hw_cm
-                        sz1 = star_z + req_hw_cm
-
-                        subbox_lines = (
-                            f"subbox_nx = {subbox_npix}\n"
-                            f"subbox_ny = {subbox_npix}\n"
-                            f"subbox_nz = {subbox_npix}\n"
-                            f"subbox_x0 = {sx0:.6e}\n"
-                            f"subbox_x1 = {sx1:.6e}\n"
-                            f"subbox_y0 = {sy0:.6e}\n"
-                            f"subbox_y1 = {sy1:.6e}\n"
-                            f"subbox_z0 = {sz0:.6e}\n"
-                            f"subbox_z1 = {sz1:.6e}\n"
-                        )
-
-                    with open(sink_dir / "radmc3d.inp", "w") as rf:
-                        rf.write(base_content)
-                        if subbox_lines:
-                            rf.write(subbox_lines)
+                    write_radmc3d_control(
+                        sink_dir,
+                        nphot=nphot,
+                        nphot_scat=nphot_scat,
+                        setthreads=setthreads,
+                        scattering_mode=scattering_mode,
+                        scattering_mode_max=scattering_mode_max,
+                        modified_random_walk=modified_random_walk,
+                        rto_style=rto_style,
+                        rto_single=rto_single,
+                        extra_options=subbox_opts,
+                    )
 
                 print(f"    {sink_dir.name}: OK")
 
@@ -1146,29 +1093,24 @@ class Pipeline:
 
     def render_images(
         self,
-        # dust_components,
-        dust_mixtures,
-        npix,
-        distance_pc,
-        wavelengths_mm,
+        dust_mixtures = None,
+        npix = None,
+        distance_pc = None,
+        wavelengths_mm = None,
         views = None,
-        # midplane_zoom = 1,
         fov_m = None,
         fov_au = None,
         label = "whole",
-        grid_path =None,
-        n_dust = None ,
+        grid_path = None,
+        n_dust = None,
         nr_threads = None,
-        # dust_size_min = None,
-        # dust_size_max = None,
-        # dust_size_powerlaw = None,
         mean_molecular_weight = None,
         mass_fraction = None,
         polaris_binary = None,
         cleanup_views = True,
-        polaris_cmd = "CMD_DUST_EMISSION",
-        alignment = "ALIG_PA",
-        peel_off = True,
+        polaris_cmd = None,
+        alignment = None,
+        peel_off = None,
         acceptance_angle = None,
         nr_photons_scat = None,
         source_star_scat = None,
@@ -1177,58 +1119,58 @@ class Pipeline:
         """
         Run POLARIS dust emission/scattering imaging.
 
+        The observation setup defaults to configparams.imaging, the dust setup
+        to configparams.dust, and the execution settings to configparams.polaris.
+        Every config-backed argument defaults to None and is resolved from the
+        config; pass one explicitly only to override it for this call.
+
         Parameters
         ----------
-        dust_components : list of dict
-            Dust material definitions.
-        npix : int
-            Image resolution (npix x npix pixels).
-        distance_pc : float
-            Source distance in parsecs.
-        wavelengths_mm : list of float
-            Wavelengths to image in millimetres.
+        dust_mixtures : dict or None
+            Dust material definitions. If None, uses configparams.dust.mixtures.
+        npix : int or None
+            Image resolution (npix x npix pixels). If None, configparams.imaging.npix.
+        distance_pc : float or None
+            Source distance in parsecs. If None, configparams.imaging.distance_pc (required).
+        wavelengths_mm : list of float or None
+            Wavelengths to image in millimetres. If None,
+            configparams.imaging.wavelengths_mm (required, non-empty).
         views : list of str or None
-            Viewing angles (e.g. ["xy", "xz", "yz"]).
-        midplane_zoom : int or float
-            Midplane zoom factor.
+            Viewing angles (subset of ["xy", "xz", "yz"]). If None,
+            configparams.imaging.views.
         fov_m : float or None
-            Field of view in metres (full width). Overridden by fov_au if set.
+            Field of view in metres (full width). Overrides fov_au if set.
         fov_au : float or None
-            Field of view in AU (full width). For subboxes, use the same
-            value as the RADMC-3D regrid box_au (e.g., 1000 for ±500 AU).
-            Converted to metres and passed to POLARIS.
+            Field of view in AU (full width). If None, configparams.imaging.fov_au.
+            For subboxes, use the same value as the RADMC-3D regrid box_au.
         label : str
-            Output subdirectory label.
+            Output subdirectory label (per-call, not config-backed).
         grid_path : str or Path or None
             Path to the merged grid. If None, auto-detected.
         n_dust : int or None
-            Number of dust species.
+            Number of dust species. If None, auto-detected.
         nr_threads : int or None
-            OpenMP threads.
-        dust_size_min, dust_size_max : float or None
-            Grain size range in metres.
-        dust_size_powerlaw : float or None
-            Size distribution exponent.
+            OpenMP threads. If None, configparams.polaris.nr_threads.
         mean_molecular_weight : float or None
-            Gas mu.
+            Gas mu. If None, configparams.dust.mean_molecular_weight.
         mass_fraction : float or None
-            Dust-to-gas mass fraction.
+            Total dust-to-gas mass fraction. If None, configparams.dust.mass_fraction.
         polaris_binary : str or None
-            POLARIS executable.
+            POLARIS executable. If None, configparams.polaris.polaris_binary.
         cleanup_views : bool
-            Remove previous image outputs.
-        polaris_cmd : str
-            POLARIS command.
-        alignment : str
-            Grain alignment mechanism.
-        peel_off : bool
-            Use peel-off technique.
+            Remove previous image outputs (per-call).
+        polaris_cmd : str or None
+            POLARIS command. If None, configparams.imaging.polaris_cmd.
+        alignment : str or None
+            Grain alignment mechanism. If None, configparams.imaging.alignment.
+        peel_off : bool or None
+            Use peel-off technique. If None, configparams.imaging.peel_off.
         acceptance_angle : float or None
-            Acceptance angle for scattered light.
+            Acceptance angle for scattered light. If None, configparams.imaging.acceptance_angle.
         nr_photons_scat : int or None
-            Photon packages for scattering MC.
+            Photon packages for scattering MC. If None, configparams.imaging.nr_photons_scat.
         source_star_scat : list of dict or None
-            Stellar sources for scattering.
+            Stellar sources for scattering (per-call).
         subbox : None, str, list of str, or "all"
             - None: render full cloud.
             - "sink_0042": single subbox.
@@ -1244,22 +1186,49 @@ class Pipeline:
         from radprocess.polaris.imaging import render_images
 
         polaris_dir = self.polaris_outputs_dir
+        img = self.configparams.imaging
+        dust = self.configparams.dust
         pc = self.configparams.polaris
 
-        # if dust_size_min is None:
-        #     dust_size_min = pc.dust_size_min
-        # if dust_size_max is None:
-        #     dust_size_max = pc.dust_size_max
-        # if dust_size_powerlaw is None:
-        #     dust_size_powerlaw = pc.dust_size_powerlaw
-        if mean_molecular_weight is None:
-            mean_molecular_weight = pc.mean_molecular_weight
-        if mass_fraction is None:
-            mass_fraction = pc.mass_fraction
-        if nr_threads is None:
-            nr_threads = pc.nr_threads
-        if polaris_binary is None:
-            polaris_binary = pc.polaris_binary
+        # Resolve arguments against the config (explicit call value wins).
+        dust_mixtures = _resolve(dust_mixtures, dust.mixtures)
+        npix = _resolve(npix, img.npix)
+        distance_pc = _resolve(distance_pc, img.distance_pc)
+        wavelengths_mm = _resolve(wavelengths_mm, img.wavelengths_mm)
+        views = _resolve(views, img.views)
+        fov_au = _resolve(fov_au, img.fov_au)
+        polaris_cmd = _resolve(polaris_cmd, img.polaris_cmd)
+        alignment = _resolve(alignment, img.alignment)
+        peel_off = _resolve(peel_off, img.peel_off)
+        acceptance_angle = _resolve(acceptance_angle, img.acceptance_angle)
+        nr_photons_scat = _resolve(nr_photons_scat, img.nr_photons_scat)
+        mean_molecular_weight = _resolve(mean_molecular_weight, dust.mean_molecular_weight)
+        mass_fraction = _resolve(mass_fraction, dust.mass_fraction)
+        nr_threads = _resolve(nr_threads, pc.nr_threads)
+        polaris_binary = _resolve(polaris_binary, pc.polaris_binary)
+
+        # Required fields (no safe default): fail early with a clear message.
+        if not dust_mixtures:
+            raise ValueError(
+                "No dust mixtures available: set configparams.dust.mixtures "
+                "or pass dust_mixtures=... (see DustConfig)."
+            )
+        if distance_pc is None:
+            raise ValueError(
+                "distance_pc is required: set configparams.imaging.distance_pc "
+                "or pass distance_pc=..."
+            )
+        if not wavelengths_mm:
+            raise ValueError(
+                "wavelengths_mm is required: set configparams.imaging.wavelengths_mm "
+                "or pass wavelengths_mm=..."
+            )
+
+        # Honour a config/argument fov_au in the full-cloud path too (the
+        # subbox path handles fov_au/fov_m itself further below).
+        if fov_m is None and fov_au is not None:
+            from radprocess.constants.constants import au2m as _au2m
+            fov_m = fov_au * _au2m
 
         if n_dust is None:
             root = self.get_amr_root()
@@ -1290,12 +1259,8 @@ class Pipeline:
                 polaris_dir = polaris_dir,
                 image_output_dir = image_output_dir,
                 grid_path = grid_path,
-                # dust_components = dust_components,
                 dust_mixtures = dust_mixtures,
                 n_dust = n_dust,
-                # dust_size_min = dust_size_min,
-                # dust_size_max = dust_size_max,
-                # dust_size_powerlaw = dust_size_powerlaw,
                 mean_molecular_weight = mean_molecular_weight,
                 mass_fraction = mass_fraction,
                 npix = npix,
@@ -1303,7 +1268,6 @@ class Pipeline:
                 wavelengths_mm = wavelengths_mm,
                 views = views,
                 nr_threads = nr_threads,
-                # midplane_zoom = midplane_zoom,
                 fov_m = fov_m,
                 output_num = output_num,
                 polaris_binary = polaris_binary,
@@ -1393,12 +1357,8 @@ class Pipeline:
                 polaris_dir = polaris_sink_dir,
                 image_output_dir = image_output_dir,
                 grid_path = sink_grid,
-                # dust_components = dust_components,
                 dust_mixtures = dust_mixtures,
                 n_dust = n_dust,
-                # dust_size_min = dust_size_min,
-                # dust_size_max = dust_size_max,
-                # dust_size_powerlaw = dust_size_powerlaw,
                 mean_molecular_weight = mean_molecular_weight,
                 mass_fraction = mass_fraction,
                 npix = npix,
@@ -1406,7 +1366,6 @@ class Pipeline:
                 wavelengths_mm = wavelengths_mm,
                 views = views,
                 nr_threads = nr_threads,
-                # midplane_zoom = midplane_zoom,
                 fov_m = subbox_fov_m,
                 output_num = output_num,
                 polaris_binary = polaris_binary,

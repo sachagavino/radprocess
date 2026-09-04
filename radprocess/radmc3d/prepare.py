@@ -261,41 +261,67 @@ def write_stars(radmc_dir, stars, wavelengths):
 #  Write radmc3d.inp control file
 # ============================================================
 
-def write_radmc3d_control(radmc_dir, nphot=1_000_000, setthreads=8,
-                          scattering_mode=1, modified_random_walk=1,
-                          rto_style=3, rto_single=1):
+def write_radmc3d_control(radmc_dir, nphot=1_000_000, nphot_scat=None,
+                          setthreads=8, scattering_mode=1,
+                          scattering_mode_max=None, modified_random_walk=1,
+                          rto_style=3, rto_single=1, extra_options=None):
     """
     Write the RADMC-3D radmc3d.inp control file.
+
+    The explicit keyword arguments are the config-backed, wired options
+    (mirrored by Radmc3dConfig). Any other radmc3d.inp key can be written
+    through extra_options without changing this signature, e.g.
+    extra_options={"istar_sphere": 1, "mc_scat_maxtauabs": 30.0}.
 
     Parameters
     ----------
     radmc_dir : str or Path
-        Output directory.
+        Output directory (radmc3d.inp is written here).
     nphot : int
-        Number of photon packages for mctherm and scattering.
+        Photon packages for the thermal Monte-Carlo.
+    nphot_scat : int or None
+        Photon packages for scattering. If None, defaults to nphot.
     setthreads : int
         Number of OpenMP threads.
     scattering_mode : int
         Scattering mode (1 = isotropic).
+    scattering_mode_max : int or None
+        Maximum scattering mode. If None, defaults to scattering_mode.
     modified_random_walk : int
         Enable modified random walk (1 = yes).
     rto_style : int
         Output style for dust_temperature (3 = binary).
     rto_single : int
         Single precision output (1 = yes).
+    extra_options : dict or None
+        Additional radmc3d.inp key/value pairs, written verbatim as
+        "key = value". Use for options not (yet) promoted to explicit
+        arguments (e.g. subbox_*, mrw_*, istar_sphere).
     """
     radmc_dir = Path(radmc_dir)
     filepath = radmc_dir / "radmc3d.inp"
 
+    nphot_scat = nphot if nphot_scat is None else nphot_scat
+    scattering_mode_max = (
+        scattering_mode if scattering_mode_max is None else scattering_mode_max
+    )
+
+    options = {
+        "nphot": int(nphot),
+        "nphot_scat": int(nphot_scat),
+        "setthreads": setthreads,
+        "scattering_mode": scattering_mode,
+        "scattering_mode_max": scattering_mode_max,
+        "modified_random_walk": modified_random_walk,
+        "rto_style": rto_style,
+        "rto_single": rto_single,
+    }
+    if extra_options:
+        options.update(extra_options)
+
     with open(filepath, "w") as f:
-        f.write(f"nphot = {int(nphot)}\n")
-        f.write(f"nphot_scat = {int(nphot)}\n")
-        f.write(f"setthreads = {setthreads}\n")
-        f.write(f"scattering_mode = {scattering_mode}\n")
-        f.write(f"scattering_mode_max = {scattering_mode}\n")
-        f.write(f"modified_random_walk = {modified_random_walk}\n")
-        f.write(f"rto_style = {rto_style}\n")
-        f.write(f"rto_single = {rto_single}\n")
+        for key, value in options.items():
+            f.write(f"{key} = {value}\n")
 
     print(f"    radmc3d.inp (nphot={int(nphot)}, threads={setthreads})")
 
@@ -314,8 +340,13 @@ def prepare_radmc3d_inputs(
     wave_max=3000,
     n_wavelengths=200,
     nphot=1_000_000,
+    nphot_scat=None,
     setthreads=8,
     scattering_mode=1,
+    scattering_mode_max=None,
+    modified_random_walk=1,
+    rto_style=3,
+    rto_single=1,
 ):
     """
     Full Step 5: convert POLARIS opacities and write all remaining
@@ -403,8 +434,11 @@ def prepare_radmc3d_inputs(
 
     # 5) radmc3d.inp
     write_radmc3d_control(
-        radmc_dir, nphot=nphot, setthreads=setthreads,
-        scattering_mode=scattering_mode,
+        radmc_dir, nphot=nphot, nphot_scat=nphot_scat,
+        setthreads=setthreads, scattering_mode=scattering_mode,
+        scattering_mode_max=scattering_mode_max,
+        modified_random_walk=modified_random_walk,
+        rto_style=rto_style, rto_single=rto_single,
     )
 
     print(f"\nAll RADMC-3D input files prepared successfully in: {radmc_dir}")
