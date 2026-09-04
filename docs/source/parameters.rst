@@ -296,8 +296,8 @@ by both the opacity step (Stage 2) and rendering (Stage 4).
      - Mean molecular weight (mu) of the gas.
    * - ``mass_fraction``
      - float
-     - ``0.01``
-     - Total dust-to-gas mass fraction (written as the POLARIS ``<mass_fraction>`` keyword).
+     - ``1``
+     - Gas-to-dust mass ratio: 100 already applied during grid conversion (written as the POLARIS ``<mass_fraction>`` keyword).
 
 .. note::
 
@@ -547,6 +547,29 @@ Passed to ``run_radmc3d_mctherm``.
      - Which directory to run in: None (full cloud), a single sink, a list of sinks, or "all" sub-boxes.
 
 
+Merging the temperature (method arguments)
+------------------------------------------
+
+Passed to ``merge_temperature``.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 20 24 14 42
+
+   * - Argument
+     - Type
+     - Default
+     - Description
+   * - ``n_dust``
+     - int or None
+     - ``None``
+     - Number of dust species. If None, auto-detected.
+   * - ``subbox``
+     - None / str / list / "all"
+     - ``None``
+     - Which grid to merge the temperature into.
+
+
 .. _sec-params-render:
 
 4. Rendering images with POLARIS
@@ -625,27 +648,7 @@ default and are required (checked by ``validate()``).
      - ``5000.0``
      - [K] Temperature of the default scattering source star.
 
-Merging the temperature (method arguments)
-------------------------------------------
 
-Passed to ``merge_temperature``.
-
-.. list-table::
-   :header-rows: 1
-   :widths: 20 24 14 42
-
-   * - Argument
-     - Type
-     - Default
-     - Description
-   * - ``n_dust``
-     - int or None
-     - ``None``
-     - Number of dust species. If None, auto-detected.
-   * - ``subbox``
-     - None / str / list / "all"
-     - ``None``
-     - Which grid to merge the temperature into.
 
 Rendering (method arguments)
 ----------------------------
