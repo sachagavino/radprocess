@@ -18,11 +18,13 @@ pipeline, grouped into four stages:
    * **Configuration parameters** — persistent fields stored on the
      configuration object (``pipe.configparams``). They are set once and
      reused by every stage. These are the fields defined in
-     :mod:`radprocess.utils.config`.
+     :mod:`radprocess.utils.config`, grouped into ``dir``, ``amrsource``,
+     ``sim``, ``dust``, ``radmc3d``, ``polaris`` and ``imaging``.
    * **Method arguments** — passed at call time to a pipeline method
-     (``convert_to_polaris``, ``render_images``, ...). Many method arguments
-     default to ``None``; when left as ``None`` they fall back to the matching
-     configuration parameter.
+     (``convert_to_polaris``, ``render_images``, ...). Config-backed method
+     arguments default to ``None``; when left as ``None`` they are resolved
+     from the matching configuration parameter, so an explicit call value
+     always wins and an omitted one inherits ``configparams``.
 
 Setting configuration parameters
 ================================
@@ -39,15 +41,23 @@ Setting configuration parameters
    cfg.sim.size_hole_au  = 5.0
    cfg.amrsource.vel     = True
 
-   # Stage 2 / 4 — POLARIS
-   cfg.polaris.dust_size_max = 1.0e-3
+   # Stage 2 / 4 — dust setup (shared by opacity and imaging)
+   cfg.dust.mixtures          = {...}     # see DustConfig
+   cfg.dust.mean_molecular_weight = 2.37
+   cfg.dust.mass_fraction     = 0.01
 
    # Stage 3 — RADMC-3D
    cfg.radmc3d.nphot = 2_000_000
 
-The configuration object is *strict*: assigning an unknown field, or a value of
-the wrong type, raises an error. It also renders as a rich table in a Jupyter
-notebook and as a formatted table in the terminal.
+   # Stage 4 — imaging
+   cfg.imaging.distance_pc    = 140.0
+   cfg.imaging.wavelengths_mm = [1.3]
+
+Before a run, ``cfg.validate()`` checks the required fields
+(``dust.mixtures``, ``imaging.distance_pc`` and ``imaging.wavelengths_mm``).
+The configuration object is *strict*: assigning an unknown field, or a value
+of the wrong type, raises an error. It also renders as a rich table in a
+Jupyter notebook and as a formatted table in the terminal.
 
 
 .. _sec-params-ramses:
@@ -84,6 +94,8 @@ Source fields (configuration)
 
 Which AMR fields are read from the RAMSES output. ``rho`` is always included;
 the remaining fields are read only if enabled *and* present in the output.
+Enabling ``temp`` implicitly forces ``p`` on, since temperature is derived from
+pressure.
 
 .. list-table::
    :header-rows: 1
@@ -165,22 +177,34 @@ Simulation / physics (configuration)
      - float
      - ``0.1``
      - Accretion fraction converted into radiation. Change at your own risk!
-   * - ``use_ramses_T``
-     - bool
-     - ``True``
-     - Use RAMSES stellar temperatures (if available in the sink info) as stellar inputs for the RT simulations.
-   * - ``use_ramses_acc_rate``
-     - bool
-     - ``True``
-     - Use RAMSES accretion rates (if available in the sink info) to derive stellar radii for the RT simulations.
    * - ``use_multi_grain``
      - bool
      - ``True``
-     - Do RT with multiple bins if True (when the RAMSES output has multiple bins). If False, dust density is computed as ``dtogas * rho``.
-   * - ``nb_dust``
-     - int
-     - ``0``
-     - Number of dust species / bins (bookkeeping; populated during conversion).
+     - Do RT with multiple bins if True (when the RAMSES output has multiple bins). If False, dust density is computed as ``dtogas * rho``, ignoring any per-bin data.
+   * - ``use_ramses_T``
+     - bool
+     - ``True``
+     - *Reserved — not currently wired.* Intended to use RAMSES stellar temperatures as stellar inputs. See the note below.
+   * - ``use_ramses_acc_rate``
+     - bool
+     - ``True``
+     - *Reserved — not currently wired.* Intended to use RAMSES accretion data to derive stellar radii. See the note below.
+
+.. warning::
+
+   ``use_ramses_T`` and ``use_ramses_acc_rate`` are currently **inactive**:
+   they can be set but are not read anywhere, so changing them has no effect.
+   The stellar temperature is always taken from the RAMSES ``Teff`` column and
+   the radius is derived from the total (internal + accretion) luminosity. The
+   intended semantics — in particular whether the accretion *rate* (with
+   ``facc``) or the accretion *luminosity* should drive the radius — are still
+   under discussion, so these flags are left unwired on purpose.
+
+.. note::
+
+   ``nb_dust`` is a top-level ``ConfigParams`` field (not part of ``sim``); it
+   is bookkeeping for the number of dust species and is populated during
+   conversion.
 
 Extraction & grid controls (method arguments)
 ---------------------------------------------
@@ -248,11 +272,41 @@ Settings used when writing the POLARIS octree grid and generating the dust
 opacity tables (``convert_to_polaris`` and ``run_polaris_opacity``). This stage
 also inherits the extraction controls from Stage 1.
 
-POLARIS dust & runtime (configuration)
---------------------------------------
+Dust composition (configuration)
+--------------------------------
 
-These fields live in ``cfg.polaris`` and are shared with the rendering stage
-(Stage 4).
+The dust setup lives in ``cfg.dust`` and is the single source of truth shared
+by both the opacity step (Stage 2) and rendering (Stage 4).
+
+.. list-table::
+   :header-rows: 1
+   :widths: 26 10 14 50
+
+   * - Parameter
+     - Type
+     - Default
+     - Description
+   * - ``mixtures``
+     - dict
+     - ``{}``
+     - Dust mixtures, ``{mixture_id: {component: {path, distribution, fraction, density, amin, amax, index}}}``. Required (grain sizes come from each component's ``amin``/``amax``/``distribution``).
+   * - ``mean_molecular_weight``
+     - float
+     - ``2.37``
+     - Mean molecular weight (mu) of the gas.
+   * - ``mass_fraction``
+     - float
+     - ``0.01``
+     - Total dust-to-gas mass fraction (written as the POLARIS ``<mass_fraction>`` keyword).
+
+.. note::
+
+   Within a mixture, each component's ``fraction`` is its mass fraction *within
+   the dust* (the components of a mixture sum to 1). This is distinct from
+   ``mass_fraction`` above, which is the overall dust-to-gas ratio.
+
+POLARIS execution (configuration)
+---------------------------------
 
 .. list-table::
    :header-rows: 1
@@ -262,26 +316,6 @@ These fields live in ``cfg.polaris`` and are shared with the rendering stage
      - Type
      - Default
      - Description
-   * - ``dust_size_min``
-     - float
-     - ``5e-9``
-     - [m] Minimum grain radius.
-   * - ``dust_size_max``
-     - float
-     - ``2.5e-7``
-     - [m] Maximum grain radius.
-   * - ``dust_size_powerlaw``
-     - float
-     - ``-3.5``
-     - Power-law exponent for the grain size distribution (e.g. -3.5 for MRN).
-   * - ``mean_molecular_weight``
-     - float
-     - ``2.37``
-     - Mean molecular weight (mu) of the gas.
-   * - ``mass_fraction``
-     - float
-     - ``1.0``
-     - Dust-to-gas mass fraction.
    * - ``nr_threads``
      - int
      - ``8``
@@ -295,7 +329,7 @@ Opacity run (method arguments)
 ------------------------------
 
 Passed to ``run_polaris_opacity``. Arguments left as ``None`` fall back to the
-``cfg.polaris`` fields above.
+``cfg.dust`` and ``cfg.polaris`` fields above.
 
 .. list-table::
    :header-rows: 1
@@ -306,17 +340,17 @@ Passed to ``run_polaris_opacity``. Arguments left as ``None`` fall back to the
      - Default
      - Description
    * - ``dust_mixtures``
-     - dict
-     - *(required)*
-     - Dust material definitions (paths, size distribution, fractions). Must be supplied explicitly since it contains paths specific to the user's setup.
+     - dict or None
+     - ``None``
+     - Dust material definitions. If None, uses ``dust.mixtures``.
    * - ``mean_molecular_weight``
      - float or None
      - ``None``
-     - Gas mean molecular weight. Falls back to ``polaris.mean_molecular_weight``.
+     - Gas mean molecular weight. Falls back to ``dust.mean_molecular_weight``.
    * - ``mass_fraction``
      - float or None
      - ``None``
-     - Dust-to-gas mass fraction. Falls back to ``polaris.mass_fraction``.
+     - Dust-to-gas mass fraction. Falls back to ``dust.mass_fraction``.
    * - ``nr_threads``
      - int or None
      - ``None``
@@ -349,14 +383,15 @@ The grid-writing step ``convert_to_polaris`` additionally accepts ``hole_au``
 
 Settings used when converting POLARIS opacities to RADMC-3D format, writing the
 RADMC-3D input files, and running the thermal Monte-Carlo
-(``prepare_radmc3d_inputs``, ``thermal_radmc3d``, ``run_radmc3d_mctherm``).
-This stage also inherits the grid controls from Stage 1
-(``convert_to_radmc``: ``gridstyle``, ``coordsystem``).
+(``prepare_radmc3d_inputs`` and ``run_radmc3d_mctherm``). This stage also
+inherits the grid controls from Stage 1 (``convert_to_radmc``: ``gridstyle``,
+``coordsystem``).
 
 RADMC-3D settings (configuration)
 ---------------------------------
 
-Fields in ``cfg.radmc3d``.
+Fields in ``cfg.radmc3d``. All of these are now forwarded through
+``prepare_radmc3d_inputs`` to the single ``radmc3d.inp`` writer.
 
 .. list-table::
    :header-rows: 1
@@ -373,7 +408,7 @@ Fields in ``cfg.radmc3d``.
    * - ``nphot_scat``
      - int
      - ``1000000``
-     - Number of photon packages for scattering Monte Carlo.
+     - Number of photon packages for the scattering Monte-Carlo.
    * - ``setthreads``
      - int
      - ``8``
@@ -449,6 +484,10 @@ the ``cfg.radmc3d`` fields above.
      - int or None
      - ``None``
      - Photon packages for mctherm. Falls back to ``radmc3d.nphot``.
+   * - ``nphot_scat``
+     - int or None
+     - ``None``
+     - Scattering photon packages. Falls back to ``radmc3d.nphot_scat``.
    * - ``setthreads``
      - int or None
      - ``None``
@@ -457,57 +496,33 @@ the ``cfg.radmc3d`` fields above.
      - int or None
      - ``None``
      - Scattering mode. Falls back to ``radmc3d.scattering_mode``.
+   * - ``scattering_mode_max``
+     - int or None
+     - ``None``
+     - Maximum scattering mode. Falls back to ``radmc3d.scattering_mode_max``.
+   * - ``modified_random_walk``
+     - int or None
+     - ``None``
+     - Modified random walk. Falls back to ``radmc3d.modified_random_walk``.
+   * - ``rto_style``
+     - int or None
+     - ``None``
+     - Output style. Falls back to ``radmc3d.rto_style``.
+   * - ``rto_single``
+     - int or None
+     - ``None``
+     - Single-precision output. Falls back to ``radmc3d.rto_single``.
    * - ``subbox``
      - bool
      - ``False``
      - If True, distribute the shared input files to all sub-box folders.
 
-Thermal Monte-Carlo (method arguments)
---------------------------------------
+.. note::
 
-``thermal_radmc3d`` writes the RADMC-3D input files and (optionally) runs the
-thermal Monte-Carlo. The ``write_*`` flags toggle individual input files.
-
-.. list-table::
-   :header-rows: 1
-   :widths: 24 10 12 54
-
-   * - Argument
-     - Type
-     - Default
-     - Description
-   * - ``run``
-     - bool
-     - ``True``
-     - Run the thermal Monte-Carlo. If False, assume the RADMC-3D output files already exist.
-   * - ``nphot``
-     - int/float
-     - ``1e4``
-     - Number of photon packages for this thermal run.
-   * - ``write_opac``
-     - bool
-     - ``True``
-     - Write the dust opacity input files.
-   * - ``write_control``
-     - bool
-     - ``True``
-     - Write the ``radmc3d.inp`` control file.
-   * - ``write_star``
-     - bool
-     - ``True``
-     - Write the stellar source file.
-   * - ``write_wave``
-     - bool
-     - ``True``
-     - Write the wavelength grid file.
-   * - ``write_mcmono``
-     - bool
-     - ``True``
-     - Write the monochromatic Monte-Carlo wavelength file.
-   * - ``write_ext``
-     - bool
-     - ``True``
-     - Write the external / additional input files.
+   The ``radmc3d.inp`` control file is written by a single writer,
+   ``radmc3d.prepare.write_radmc3d_control``. Beyond the explicit keywords
+   above it accepts an ``extra_options`` dict for any other ``radmc3d.inp``
+   key (used, for example, to pass the ``subbox_*`` regrid cube per sink).
 
 Running mctherm (method arguments)
 ----------------------------------
@@ -538,9 +553,77 @@ Passed to ``run_radmc3d_mctherm``.
 ================================
 
 Settings used to merge the RADMC-3D temperature into the POLARIS grid and to
-produce the synthetic dust-continuum images
-(``merge_temperature`` and ``render_images``). Most parameters here are method
-arguments; a few default to ``cfg.polaris`` fields (Stage 2).
+produce the synthetic dust-continuum images (``merge_temperature`` and
+``render_images``). The observation is defined by ``cfg.imaging``; the dust
+setup is inherited from ``cfg.dust`` (Stage 2) and execution settings from
+``cfg.polaris``.
+
+Imaging / observation (configuration)
+-------------------------------------
+
+Fields in ``cfg.imaging``. ``distance_pc`` and ``wavelengths_mm`` have no safe
+default and are required (checked by ``validate()``).
+
+.. list-table::
+   :header-rows: 1
+   :widths: 28 12 16 44
+
+   * - Parameter
+     - Type
+     - Default
+     - Description
+   * - ``npix``
+     - int
+     - ``256``
+     - Image resolution (npix x npix pixels).
+   * - ``distance_pc``
+     - float
+     - *(required)*
+     - Source distance in parsecs.
+   * - ``wavelengths_mm``
+     - list of float
+     - *(required)*
+     - Wavelengths to image, in millimetres.
+   * - ``views``
+     - list of str
+     - ``["xy", "xz", "yz"]``
+     - Viewing angles to render. Built-in: ``xy``, ``xz``, ``yz``.
+   * - ``custom_views``
+     - dict
+     - ``{}``
+     - User-defined views merged over the built-ins: ``{name: {plane_id, axis1, axis2, theta, phi}}``.
+   * - ``fov_au``
+     - float or None
+     - ``None``
+     - [AU] Field of view (full width). None = full grid extent.
+   * - ``polaris_cmd``
+     - str
+     - ``"CMD_DUST_EMISSION"``
+     - POLARIS command: ``CMD_DUST_EMISSION``, ``CMD_DUST_SCATTERING``, or both.
+   * - ``alignment``
+     - str
+     - ``"ALIG_PA"``
+     - Grain alignment: ``ALIG_PA``, ``ALIG_IDG``, ``ALIG_RAT``, ``ALIG_INTERNAL``.
+   * - ``peel_off``
+     - bool
+     - ``True``
+     - Use the peel-off technique for scattering.
+   * - ``acceptance_angle``
+     - float or None
+     - ``None``
+     - [deg] Acceptance angle for scattered light. None = POLARIS default.
+   * - ``nr_photons_scat``
+     - int or None
+     - ``None``
+     - Photon packages for the scattering Monte-Carlo. None = no scattering source.
+   * - ``scat_source_radius_rsun``
+     - float
+     - ``1.0``
+     - [Rsun] Radius of the default scattering source star (used when ``nr_photons_scat`` is set but no explicit source is given).
+   * - ``scat_source_temp_k``
+     - float
+     - ``5000.0``
+     - [K] Temperature of the default scattering source star.
 
 Merging the temperature (method arguments)
 ------------------------------------------
@@ -567,7 +650,10 @@ Passed to ``merge_temperature``.
 Rendering (method arguments)
 ----------------------------
 
-Passed to ``render_images``.
+Passed to ``render_images``. Config-backed arguments default to ``None`` and
+resolve from ``cfg.imaging`` (observation), ``cfg.dust`` (dust) and
+``cfg.polaris`` (execution). ``custom_views`` and the scattering-source star
+parameters are taken directly from ``cfg.imaging``.
 
 .. list-table::
    :header-rows: 1
@@ -578,37 +664,37 @@ Passed to ``render_images``.
      - Default
      - Description
    * - ``dust_mixtures``
-     - dict
-     - *(required)*
-     - Dust material definitions (same structure as the opacity run).
-   * - ``npix``
-     - int
-     - *(required)*
-     - Image resolution (npix x npix pixels).
-   * - ``distance_pc``
-     - float
-     - *(required)*
-     - Source distance in parsecs.
-   * - ``wavelengths_mm``
-     - list of float
-     - *(required)*
-     - Wavelengths to image, in millimetres.
-   * - ``views``
-     - list of str or None
+     - dict or None
      - ``None``
-     - Viewing angles to render. None renders all three standard views: ``xy``, ``xz``, ``yz``.
+     - Dust definitions. If None, uses ``dust.mixtures``.
+   * - ``npix``
+     - int or None
+     - ``None``
+     - Image resolution. Falls back to ``imaging.npix``.
+   * - ``distance_pc``
+     - float or None
+     - ``None``
+     - Source distance in parsecs. Falls back to ``imaging.distance_pc``.
+   * - ``wavelengths_mm``
+     - list or None
+     - ``None``
+     - Wavelengths in mm. Falls back to ``imaging.wavelengths_mm``.
+   * - ``views``
+     - list or None
+     - ``None``
+     - Views to render. Falls back to ``imaging.views``.
    * - ``fov_m``
      - float or None
      - ``None``
-     - Field of view in metres (full width). Overridden by ``fov_au`` if set. None = full grid extent.
+     - [m] Field of view (full width). Overrides ``fov_au`` if set.
    * - ``fov_au``
      - float or None
      - ``None``
-     - Field of view in AU (full width). For sub-boxes, use the same value as the RADMC-3D regrid box.
+     - [AU] Field of view. Falls back to ``imaging.fov_au``. For sub-boxes, match the RADMC-3D regrid box.
    * - ``label``
      - str
      - ``"whole"``
-     - Output subdirectory label (e.g. "whole" or "inner").
+     - Output subdirectory label (per-call, not config-backed).
    * - ``grid_path``
      - str/Path or None
      - ``None``
@@ -624,11 +710,11 @@ Passed to ``render_images``.
    * - ``mean_molecular_weight``
      - float or None
      - ``None``
-     - Gas mu. Falls back to ``polaris.mean_molecular_weight``.
+     - Gas mu. Falls back to ``dust.mean_molecular_weight``.
    * - ``mass_fraction``
      - float or None
      - ``None``
-     - Dust-to-gas mass fraction. Falls back to ``polaris.mass_fraction``.
+     - Dust-to-gas mass fraction. Falls back to ``dust.mass_fraction``.
    * - ``polaris_binary``
      - str or None
      - ``None``
@@ -638,29 +724,29 @@ Passed to ``render_images``.
      - ``True``
      - Remove previous image output for each view before rendering.
    * - ``polaris_cmd``
-     - str
-     - ``"CMD_DUST_EMISSION"``
-     - POLARIS command: ``CMD_DUST_EMISSION`` (thermal), ``CMD_DUST_SCATTERING`` (scattered light), or both in sequence.
+     - str or None
+     - ``None``
+     - POLARIS command. Falls back to ``imaging.polaris_cmd``.
    * - ``alignment``
-     - str
-     - ``"ALIG_PA"``
-     - Grain alignment mechanism: ``ALIG_PA``, ``ALIG_IDG``, ``ALIG_RAT``, ``ALIG_INTERNAL``, or empty/None for none.
+     - str or None
+     - ``None``
+     - Grain alignment. Falls back to ``imaging.alignment``.
    * - ``peel_off``
-     - bool
-     - ``True``
-     - Use the peel-off technique for scattering (more efficient for images; only relevant for scattering).
+     - bool or None
+     - ``None``
+     - Peel-off technique. Falls back to ``imaging.peel_off``.
    * - ``acceptance_angle``
      - float or None
      - ``None``
-     - Acceptance angle for scattered light, in degrees. None uses the POLARIS default.
+     - Acceptance angle for scattered light. Falls back to ``imaging.acceptance_angle``.
    * - ``nr_photons_scat``
      - int or None
      - ``None``
-     - Number of photon packages for the scattering Monte-Carlo.
+     - Scattering photon packages. Falls back to ``imaging.nr_photons_scat``.
    * - ``source_star_scat``
      - list of dict or None
      - ``None``
-     - Stellar sources for scattering (each with position, radius, temperature).
+     - Explicit stellar sources for scattering. If None and ``nr_photons_scat`` is set, a default source is used (see ``imaging.scat_source_*``).
    * - ``subbox``
      - None / str / list / "all"
      - ``None``
