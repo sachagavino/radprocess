@@ -71,7 +71,7 @@ def convert_polaris_opacities(polaris_data_dir, radmc_dir, n_dust=None):
     # Auto-detect POLARIS opacity files
     polaris_files = sorted(
         f for f in polaris_data_dir.glob("dust_mixture_*.dat")
-        if "comp" in f.name
+        if "comp" not in f.name
     )
 
     if not polaris_files:
