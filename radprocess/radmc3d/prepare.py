@@ -1,7 +1,7 @@
 """
 _____________________________________________________________________________________________________________
 file name: prepare
-last update: Apr 2026
+last update: Sep 2026
 language: > PYTHON 3.9
 short description: Prepare all remaining RADMC-3D input files after the grid conversion
                    (Step 3) and the POLARIS opacity run (Step 4).
@@ -30,9 +30,14 @@ def convert_polaris_opacities(polaris_data_dir, radmc_dir, n_dust=None):
     Convert POLARIS dust_mixture_*.dat opacity files into RADMC-3D
     dustkappa_*.inp files.
 
-    Auto-detects the POLARIS output filenames, which may follow either:
-        - Old convention: dust_mixture_001.dat, dust_mixture_002.dat, ...
-        - New convention: dust_mixture_001_comp_001.dat, ...
+    Auto-detects the POLARIS output filenames for RADMC-3D.
+    For each dust mixture, the opacity file is used:
+        dust_mixture_001.dat, dust_mixture_002.dat, ...
+
+    If there are more than one component within a single mixture,
+    files for individual components are also generated,
+    but they are excluded:
+        dust_mixture_001_comp_001.dat, ...
 
     Header lines are auto-detected (lines starting with '#' or that
     cannot be parsed as numbers are skipped).
@@ -64,7 +69,10 @@ def convert_polaris_opacities(polaris_data_dir, radmc_dir, n_dust=None):
     radmc_dir.mkdir(parents=True, exist_ok=True)
 
     # Auto-detect POLARIS opacity files
-    polaris_files = sorted(polaris_data_dir.glob("dust_mixture_*.dat"))
+    polaris_files = sorted(
+        f for f in polaris_data_dir.glob("dust_mixture_*.dat")
+        if "comp" in f.name
+    )
 
     if not polaris_files:
         raise FileNotFoundError(
