@@ -30,11 +30,11 @@ def convert_polaris_opacities(polaris_data_dir, radmc_dir, n_dust=None):
     Convert POLARIS dust_mixture_*.dat opacity files into RADMC-3D
     dustkappa_*.inp files.
 
-    Auto-detects the POLARIS output filenames for RADMC-3D.
+    Auto-detects the POLARIS output filenames for RT calculations.
     For each dust mixture, the opacity file is used:
         dust_mixture_001.dat, dust_mixture_002.dat, ...
 
-    If there are more than one component within a single mixture,
+    If there is more than one component within a single mixture,
     files for individual components are also generated,
     but they are excluded:
         dust_mixture_001_comp_001.dat, ...
