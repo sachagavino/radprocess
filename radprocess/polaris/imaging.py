@@ -24,40 +24,26 @@ import numpy as np
 
 from radprocess.constants.constants import pc2m
 from radprocess.polaris.opacity import _find_info_file, _read_ndust, run_polaris
+from radprocess.polaris.view_geometry import (
+    STANDARD_VIEW_AXES,
+    detector_shift_2d,
+    resolve_view_geometry,
+)
 
 
 # ============================================================
 #  Standard viewing geometries
 # ============================================================
 
-# Each view is defined by:
-#   plane_id : int used by POLARIS for write_3d_midplanes
-#   axis1, axis2 : detector orientation vectors
-#   theta, phi : observer angles in degrees
-
-STANDARD_VIEWS = {
-    "xy": {
-        "plane_id": 1,
-        "axis1": [1, 0, 0],
-        "axis2": [0, 1, 0],
-        "theta": 0,
-        "phi": 0,
-    },
-    "xz": {
-        "plane_id": 2,
-        "axis1": [1, 0, 0],
-        "axis2": [0, 0, 1],
-        "theta": 90,
-        "phi": 0,
-    },
-    "yz": {
-        "plane_id": 3,
-        "axis1": [0, 1, 0],
-        "axis2": [0, 0, 1],
-        "theta": 90,
-        "phi": 90,
-    },
-}
+# Standard views are defined by their IMAGE-PLANE axes (see
+# radprocess.polaris.view_geometry): "right" = ex (horizontal), "up" = ey
+# (vertical), and the line of sight ez = right x up. The POLARIS rotation
+# parameters (axis1, axis2, theta, phi) are DERIVED from that frame at render
+# time by resolve_view_geometry(), which also guarantees the detector shift is
+# projected onto the same ex/ey. This is the single source of truth; the old
+# hand-written (axis1, axis2, theta, phi) form is still accepted for
+# custom_views and is round-trip validated identically.
+STANDARD_VIEWS = STANDARD_VIEW_AXES  # backward-compatible alias
 
 
 # ============================================================
@@ -259,23 +245,23 @@ def write_imaging_cmd(
 
         axis1 = view_details["axis1"]
         axis2 = view_details["axis2"]
-        f.write(f"\n\t<axis1> {axis1[0]} {axis1[1]} {axis1[2]}")
-        f.write(f"\n\t<axis2> {axis2[0]} {axis2[1]} {axis2[2]}\n")
+        f.write(f"\n\t<axis1> {axis1[0]:.12g} {axis1[1]:.12g} {axis1[2]:.12g}")
+        f.write(f"\n\t<axis2> {axis2[0]:.12g} {axis2[1]:.12g} {axis2[2]:.12g}\n")
 
         theta = view_details["theta"]
         phi = view_details["phi"]
 
-        # Compute 2D detector shift from 3D sink offset.
-        # POLARIS detector_dust accepts ∆x ∆y as the last two parameters,
-        # which shift the image center in the detector plane (in metres).
+        # Compute 2D detector shift from the 3D sink offset. POLARIS's
+        # detector_dust takes ∆x ∆y (last two parameters) as a shift of the
+        # image centre within the detector plane, in metres. That plane is
+        # spanned by the image basis (ex, ey) POLARIS builds from the rotation
+        # -- NOT by axis1/axis2, which are the rotation axes and coincide with
+        # (ex, ey) only for xy/xz. Projecting onto ex/ey keeps the centring
+        # correct for every view (this is what fixed the yz mis-centring).
         det_dx = 0.0
         det_dy = 0.0
         if detector_shift_m is not None:
-            shift = np.array(detector_shift_m, dtype=float)
-            a1 = np.array(axis1, dtype=float)
-            a2 = np.array(axis2, dtype=float)
-            det_dx = float(np.dot(shift, a1))
-            det_dy = float(np.dot(shift, a2))
+            det_dx, det_dy = detector_shift_2d(view_details, detector_shift_m)
 
         has_shift = (det_dx != 0.0 or det_dy != 0.0)
 
@@ -285,7 +271,7 @@ def write_imaging_cmd(
                 line = (
                     f'\n\t<detector_dust nr_pixel = "{npix}"> '
                     f"{wave_m:e} {wave_m:e} 1 1 "
-                    f"{theta} {phi} {distance_m:e} {fov_m:e} {fov_m:e}"
+                    f"{theta:.10g} {phi:.10g} {distance_m:e} {fov_m:e} {fov_m:e}"
                 )
                 if has_shift:
                     line += f" {det_dx:e} {det_dy:e}"
@@ -296,13 +282,13 @@ def write_imaging_cmd(
                     f.write(
                         f'\n\t<detector_dust nr_pixel = "{npix}"> '
                         f"{wave_m:e} {wave_m:e} 1 1 "
-                        f"{theta} {phi} {distance_m:e} -1 -1 {det_dx:e} {det_dy:e}"
+                        f"{theta:.10g} {phi:.10g} {distance_m:e} -1 -1 {det_dx:e} {det_dy:e}"
                     )
                 else:
                     f.write(
                         f'\n\t<detector_dust nr_pixel = "{npix}"> '
                         f"{wave_m:e} {wave_m:e} 1 1 "
-                        f"{theta} {phi} {distance_m:e}"
+                        f"{theta:.10g} {phi:.10g} {distance_m:e}"
                     )
 
         f.write("\n\n</task>")
@@ -401,12 +387,15 @@ def render_images(
     image_output_dir = Path(image_output_dir)
 
     if views is None:
-        views = ["xy", "xz", "yz"]
+        views = list(STANDARD_VIEW_AXES.keys())
 
     # User-defined views override / extend the built-in axis-aligned ones.
-    available_views = dict(STANDARD_VIEWS)
+    # Specs may be given either in the frame form ({"right", "up"}) or the
+    # legacy rotation form ({"axis1", "axis2", "theta", "phi"}); both are
+    # resolved and validated by resolve_view_geometry() below.
+    available_specs = dict(STANDARD_VIEW_AXES)
     if custom_views:
-        available_views.update(custom_views)
+        available_specs.update(custom_views)
 
     print(f"\nRendering {len(views)} views: {views}")
     print(f"  Wavelengths: {wavelengths_mm} mm")
@@ -417,13 +406,16 @@ def render_images(
     image_dirs = {}
 
     for view_name in views:
-        if view_name not in available_views:
+        if view_name not in available_specs:
             raise ValueError(
                 f"Unknown view '{view_name}'. "
-                f"Available: {list(available_views.keys())}"
+                f"Available: {list(available_specs.keys())}"
             )
 
-        view_details = available_views[view_name]
+        # Resolve to a validated geometry: derives axis1/axis2/theta/phi and
+        # the image basis ex/ey/ez from a single source of truth, and asserts
+        # POLARIS will reproduce exactly that frame.
+        view_details = resolve_view_geometry(view_name, available_specs[view_name])
         view_output = image_output_dir / label / view_name
         view_output.mkdir(parents=True, exist_ok=True)
 

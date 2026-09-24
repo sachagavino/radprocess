@@ -784,7 +784,7 @@ def subbox_mosaic(
         )
         images.append(im)
 
-        axes[i].plot(0, 0, "w+", ms=8, mew=1.5)
+        #axes[i].plot(0, 0, "w+", ms=8, mew=1.5)
         axes[i].set_title(sink_name, fontsize=fontsize, fontweight="bold")
         axes[i].tick_params(labelsize=fontsize - 4)
 
