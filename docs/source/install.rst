@@ -150,7 +150,7 @@ Verifying the installation
     from radprocess.pipeline.Pipeline import Pipeline
 
     pipe = Pipeline()
-    pipe.configparams.ramsesoutput.ramses_output_dir = "/path/to/output_00940/"
+    pipe.configparams.dir.ramses_output = "/path/to/output_00940/"
     pipe.set_working_dir("/path/to/working_directory")
 
     # Check that RAMSES output is readable:

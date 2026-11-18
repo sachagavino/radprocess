@@ -41,12 +41,19 @@ archive), ``radmc3d/`` (RADMC-3D files), and ``polaris/`` (POLARIS files).
 Inspecting the simulation
 --------------------------
 
-Before running the pipeline, you can inspect the RAMSES output:
+Inspect the RAMSES output before running the pipeline. Reading the file
+descriptors is **not optional** for dusty simulations: it sets
+``configparams.nb_dust``, the number of dust ratios / fluids that
+``load_ramses`` will read. Without it the dust fields are skipped and the dust
+density falls back to ``sim.dtogas`` × gas density.
 
 .. code-block:: python
 
-    # Check available hydro variables
+    # Hydro variables; sets nb_dust from the dust ratios
     print(pipe.read_hydro_descriptor())
+
+    # Multi-fluid outputs only: sets nb_dust from the number of fluids
+    print(pipe.read_other_file_descriptor())
 
     # List sinks (protostars)
     print(pipe.read_sink_info())
@@ -55,41 +62,87 @@ Before running the pipeline, you can inspect the RAMSES output:
 Configuring the AMR source
 --------------------------
 
-Select which physical fields to extract from the RAMSES output. At minimum,
-you need gas density and dust ratios enabled:
+Select which physical fields to extract from the RAMSES output. The gas
+density is always read; enable the dust field that matches your simulation:
 
 .. code-block:: python
 
-    pipe.configparams.amrsource.rho = True       # gas density
-    pipe.configparams.amrsource.dust = True       # dust density ratios
-    pipe.configparams.amrsource.vel = False       # velocity (optional)
-    pipe.configparams.amrsource.p = False         # pressure (optional)
-    pipe.configparams.amrsource.temp = False      # temperature (requires pressure)
+    pipe.configparams.amrsource.rho = True          # gas density (always on)
+    pipe.configparams.amrsource.dustratios = True   # multi-grain dust ratios
+    # pipe.configparams.amrsource.fluiddens = True  # multi-fluid dust densities
+    pipe.configparams.amrsource.vel = False         # velocity (optional)
+    pipe.configparams.amrsource.p = False           # pressure (optional)
+    pipe.configparams.amrsource.temp = False        # temperature (requires pressure)
+
+For a simulation without dust fields, leave both off: the dust density is
+``sim.dtogas`` (default 0.01) times the gas density.
 
 
-Defining dust components
+Defining the dust model
+-----------------------
+
+The dust model is set once in ``pipe.configparams.dust`` and used by both
+POLARIS steps (opacities in Step 4, images in Step 8), so the two cannot
+disagree. ``dust.mixtures`` is a dictionary of mixtures, each made of one or
+more materials:
+
+.. code-block:: python
+
+    pipe.configparams.dust.mixtures = {
+        0: {                                       # mixture id (integer)
+            "silicate": {                          # free label
+                "path": "/data/dust/astrosil.nk",  # optical data (.nk or tabulated)
+                "distribution": "plaw",            # power law n(a) ~ a^index
+                "fraction": 0.625,                 # mass fraction in the mixture
+                "density": 3500.0,                 # grain bulk density [kg/m^3]
+                "amin": 5e-9,                      # min grain radius [m]
+                "amax": 2.5e-7,                    # max grain radius [m]
+                "index": -3.5,                     # MRN slope
+            },
+            "graphite": {
+                "path": "/data/dust/graphite.nk",
+                "distribution": "plaw",
+                "fraction": 0.375,
+                "density": 2250.0,
+                "amin": 5e-9,
+                "amax": 2.5e-7,
+                "index": -3.5,
+            },
+        },
+    }
+
+All values are SI (metres, kg/m\ :sup:`3`) and are not converted. One mixture
+is needed per dust density field; for multi-grain or multi-fluid outputs a
+single mixture can instead be replicated over the size bins. Every key, the
+supported size distributions, and the difference between ``fraction`` and the
+dust-to-gas ratio are described in :ref:`sec-dust-mixtures`.
+
+With ``.nk`` (refractive index) files, POLARIS computes Mie cross sections at
+``dust.mie_nr_sizes`` grain sizes per component (default 100):
+
+.. code-block:: python
+
+    pipe.configparams.dust.mie_nr_sizes = 50
+
+Defining the observation
 ------------------------
 
-The dust material properties are needed by both POLARIS (Steps 4 and 8) and
-are passed as a list of dictionaries. Each entry points to a POLARIS-format
-cross-section file (``.cs``) and a mass fraction weight:
+Distance and wavelengths have no default and are required by Step 8:
 
 .. code-block:: python
 
-    dust_components = [
-        {"path": "/data/dust/silicate_d03.cs", "weight": 0.625},
-        {"path": "/data/dust/carbon_z96.cs",   "weight": 0.375},
-    ]
+    pipe.configparams.imaging.distance_pc = 140.0
+    pipe.configparams.imaging.wavelengths_mm = [0.87, 1.3, 3.0]
+    pipe.configparams.imaging.npix = 512
 
-For a single-component model (e.g., pure silicate), use a single entry with
-``weight = 1.0``.
+``pipe.configparams.validate()`` checks the required fields before a long run.
 
 
 Running the full pipeline
 =========================
 
-Step 0: Set the pymsesrc file 
--------------------
+Step 0: Set the pymsesrc file
+-----------------------------
 
 You have the option to set, or reset the pymsesrc file according to the current RAMSES output. 
 It is recommanded to set it each time you want to run a new pipeline: 
@@ -108,9 +161,10 @@ store them in a compressed Zarr archive:
 
     pipe.load_ramses()
 
-This is the slowest step (dominated by pymses I/O). On subsequent runs, you
-can skip it entirely: radprocess will find the Zarr file on disk and load it
-directly.
+This is the slowest step (dominated by pymses I/O). On subsequent runs with
+the same ``pipeline_output``, you can skip it entirely: radprocess will find
+the Zarr file on disk and load it directly. The same holds for every step:
+see :ref:`sec-resume`.
 
 
 Step 2: Convert to POLARIS grid
@@ -144,29 +198,17 @@ Step 4: Run POLARIS opacity
 ----------------------------
 
 Execute POLARIS with a single photon package to generate dust opacity tables
-for each size bin:
+for each dust mixture (i.e. each dust density field):
 
 .. code-block:: python
 
-    pipe.run_polaris_opacity(dust_components=dust_components)
+    pipe.run_polaris_opacity()
 
-The output is a set of ``dust_mixture_XXX.dat`` files in ``polaris/data/``.
-You can override the default grain size range and power-law index either by
-passing them directly or by setting them in the configuration:
-
-.. code-block:: python
-
-    # Via the config dataclass (persistent for the session)
-    pipe.configparams.polaris.dust_size_min = 5e-9       # 5 nm
-    pipe.configparams.polaris.dust_size_max = 2.5e-7     # 250 nm
-    pipe.configparams.polaris.dust_size_powerlaw = -3.5   # MRN
-
-    # Or via keyword arguments (one-off override)
-    pipe.run_polaris_opacity(
-        dust_components=dust_components,
-        dust_size_min=1e-8,
-        dust_size_max=1e-5,
-    )
+The dust model is read from ``configparams.dust``. The output is a set of
+``dust_mixture_XXX.dat`` files in ``polaris/data/``. Every argument can be
+overridden for one call (e.g. ``dust_mixtures=...``, ``nr_threads=16``); see
+:ref:`sec-params-polaris-convert`. Grain sizes are no longer set here but in
+each component's ``amin``/``amax``.
 
 
 Step 5: Prepare RADMC-3D inputs
@@ -221,47 +263,95 @@ original POLARIS grid is preserved as ``grid_temp.polaris.dat``.
 Step 8: Render images
 ----------------------
 
-Run POLARIS dust continuum imaging on the merged grid:
+Run POLARIS dust continuum imaging on the merged grid, with the dust model
+from ``configparams.dust`` and the observation from ``configparams.imaging``:
 
 .. code-block:: python
 
-    pipe.render_images(
-        dust_components=dust_components,
-        npix=512,
-        distance_pc=140.0,
-        wavelengths_mm=[0.87, 1.3, 3.0],
-    )
+    pipe.render_images()
 
-By default, images are rendered for three viewing angles (xy, xz, yz). You can
-select specific views:
+By default, images are rendered for three viewing angles (xy, xz, yz). Any
+observation parameter can be overridden for one call, e.g. a single view:
 
 .. code-block:: python
 
-    pipe.render_images(
-        dust_components=dust_components,
-        npix=512,
-        distance_pc=140.0,
-        wavelengths_mm=[0.87, 1.3, 3.0],
-        views=["xy"],
-        label="whole",
-    )
+    pipe.render_images(views=["xy"], label="whole")
 
-For zoomed-in imaging around the central region, set a field of view and
-increase the midplane zoom:
+For zoomed-in imaging around the centre, set a field of view (full width) and a
+different label so the first images are kept:
 
 .. code-block:: python
 
-    pipe.render_images(
-        dust_components=dust_components,
-        npix=512,
-        distance_pc=140.0,
-        wavelengths_mm=[0.87, 1.3, 3.0],
-        midplane_zoom=10,
-        fov_m=1e14,        # field of view half-width in metres
-        label="inner",
-    )
+    pipe.render_images(fov_au=2000, label="inner")   # 2000 au wide
 
-Images are written to ``{working_dir}/images/{label}/{view}/``.
+Images are written to ``{pipeline_output}/polaris/images/{label}/{view}/``.
+
+
+.. _sec-resume:
+
+Resuming a run
+==============
+
+You never need to start from scratch. Every step writes its results to
+``pipeline_output`` and the next step reads them from disk, so a run can be
+stopped after any step and resumed later, in a new Python session, from the
+step where it stopped. A step that fails can be fixed and re-run on its own.
+
+What is **not** saved is the configuration: in a new session, set
+``configparams`` again (at least ``dir.ramses_output``,
+``dir.pipeline_output``, the dust model and the observation), then call only
+the steps you need:
+
+.. code-block:: python
+
+    pipe = Pipeline()
+    cfg = pipe.configparams
+    cfg.dir.ramses_output = "/data/outputs/Mass500/output_00940/"
+    cfg.dir.pipeline_output = "/data/postprocessing/M500_SFE01/"   # same as before
+    cfg.dust.mixtures = {...}
+    cfg.imaging.distance_pc = 140.0
+    cfg.imaging.wavelengths_mm = [1.3]
+
+    # Steps 0-3 already done: their files are in pipeline_output
+    pipe.run_polaris_opacity()         # Step 4
+    pipe.prepare_radmc3d_inputs()      # Step 5
+    ...
+
+Each step depends only on the outputs of earlier steps. When you change a
+parameter, re-run from the first step that uses it through Step 8; the outputs
+of the steps before it stay valid:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 46 18 36
+
+   * - What you change
+     - Re-run from
+     - Files reused
+   * - AMR fields (``amrsource``), ``sim.dtogas``, ``sim.use_multi_grain``,
+       or a new RAMSES output
+     - Step 1 (``load_ramses``)
+     - none
+   * - Hole around sinks (``sim.size_hole_au`` / ``hole_au``)
+     - Step 2
+     - Zarr store (``ramses/``)
+   * - Dust model (``dust.mixtures``, ``dust.bin_edges``,
+       ``dust.mie_nr_sizes``)
+     - Step 4 (``run_polaris_opacity``)
+     - Zarr store, both grids
+   * - RADMC-3D settings (``radmc3d.*``: photons, wavelength grid, threads)
+     - Step 5 (``prepare_radmc3d_inputs``)
+     - Zarr store, grids, opacities
+   * - Observation only (``imaging.*``: wavelengths, distance, views, field
+       of view, ``npix``, ``label``)
+     - Step 8 (``render_images``)
+     - everything; images go to a new ``label`` folder if you change it
+
+.. note::
+
+   Re-running Step 4 deletes the previous POLARIS ``data/`` folder and
+   ``grid_temp.dat``, so Steps 5 to 8 must follow: the temperatures and images
+   would otherwise belong to the old dust model.
 
 
 Complete example
@@ -277,59 +367,56 @@ Putting it all together:
     pipe.configparams.dir.ramses_output = "/data/outputs/Mass500/output_00940/"
     pipe.configparams.dir.pipeline_output = "/data/postprocessing/M500_SFE01/"
 
-    # AMR fields to extract
-    pipe.configparams.amrsource.rho = True
-    pipe.configparams.amrsource.dust = True
+    cfg = pipe.configparams
+
+    # AMR fields to extract (sets nb_dust first)
+    pipe.read_hydro_descriptor()
+    cfg.amrsource.dustratios = True
 
     # Simulation parameters
-    pipe.configparams.sim.size_hole_au = 4.0
-    pipe.configparams.sim.facc = 0.5
+    cfg.sim.size_hole_au = 4.0
+    cfg.sim.facc = 0.5
 
-    # Dust materials
-    dust = [
-        {"path": "/data/dust/silicate_d03.nk", "weight": 0.625},
-        {"path": "/data/dust/graphite.nk",   "weight": 0.375},
-    ]
+    # Dust model (SI units). With several dust bins, this single mixture is
+    # replicated over them and amin/amax come from the bins instead.
+    cfg.dust.mixtures = {
+        0: {
+            "silicate": {"path": "/data/dust/astrosil.nk", "distribution": "plaw",
+                         "fraction": 0.625, "density": 3500.0,
+                         "amin": 5e-9, "amax": 2.5e-7, "index": -3.5},
+            "graphite": {"path": "/data/dust/graphite.nk", "distribution": "plaw",
+                         "fraction": 0.375, "density": 2250.0,
+                         "amin": 5e-9, "amax": 2.5e-7, "index": -3.5},
+        },
+    }
+
+    # Observation
+    cfg.imaging.distance_pc = 140.0
+    cfg.imaging.wavelengths_mm = [0.87, 1.3, 3.0]
+    cfg.imaging.npix = 512
+
+    cfg.validate()
 
     # Run the pipeline
-    pipe.load_ramses()                                      # Step 1
-    pipe.convert_to_polaris()                               # Step 2
-    pipe.convert_to_radmc()                                 # Step 3
-    pipe.run_polaris_opacity(dust_components=dust)           # Step 4
-    pipe.prepare_radmc3d_inputs()                            # Step 5
-    pipe.run_radmc3d_mctherm()                               # Step 6
-    pipe.merge_temperature()                                 # Step 7
-    pipe.render_images(                                      # Step 8
-        dust_components=dust,
-        npix=512,
-        distance_pc=140.0,
-        wavelengths_mm=[0.87, 1.3, 3.0],
-    )
+    pipe.set_pymsesrc()                # Step 0
+    pipe.load_ramses()                 # Step 1
+    pipe.convert_to_polaris()          # Step 2
+    pipe.convert_to_radmc()            # Step 3
+    pipe.run_polaris_opacity()         # Step 4
+    pipe.prepare_radmc3d_inputs()      # Step 5
+    pipe.run_radmc3d_mctherm()         # Step 6
+    pipe.merge_temperature()           # Step 7
+    pipe.render_images()               # Step 8
 
 
 Configuration reference
 =======================
 
-All pipeline parameters are accessible through ``pipe.configparams``. The main
-groups are:
-
-``pipe.configparams.sim``
-    Simulation-level parameters: ``size_hole_au`` (hole radius around sinks),
-    ``facc`` (accretion efficiency factor).
-
-``pipe.configparams.radmc3d``
-    RADMC-3D control parameters: ``nphot``, ``nphot_scat``, ``setthreads``,
-    ``scattering_mode``, ``modified_random_walk``, ``rto_style``,
-    ``rto_single``, ``wave_min``, ``wave_max``, ``n_wavelengths``.
-
-``pipe.configparams.polaris``
-    POLARIS parameters: ``dust_size_min``, ``dust_size_max``,
-    ``dust_size_powerlaw``, ``mean_molecular_weight``, ``mass_fraction``,
-    ``nr_threads``, ``polaris_binary``.
-
-``pipe.configparams.amrsource``
-    Flags for which AMR fields to extract: ``rho``, ``dust``, ``vel``, ``p``,
-    ``temp``, ``bl``, ``br``.
+All pipeline parameters are accessible through ``pipe.configparams``, in the
+groups ``dir``, ``amrsource``, ``sim``, ``dust``, ``radmc3d``, ``polaris`` and
+``imaging``. Each field, its type, default, unit and the method arguments that
+override it are listed in :ref:`chap-parameters`. The configuration is strict:
+assigning a field that does not exist raises an error immediately.
 
 To inspect all current values:
 
@@ -337,4 +424,4 @@ To inspect all current values:
 
     print(pipe.configparams)
     print(pipe.configparams.radmc3d)
-    print(pipe.configparams.polaris)
+    print(pipe.configparams.dust)

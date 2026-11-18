@@ -45,19 +45,32 @@ Start with the same pipeline setup as the basic workflow:
     pipe.configparams.dir.ramses_output = "/data/outputs/Mass500/output_00940/"
     pipe.configparams.dir.pipeline_output = "/data/postprocessing/M500_subboxes/"
 
-    # Define the AMR fields you want to extract
+    # Define the AMR fields you want to extract (read the descriptor first:
+    # it sets the number of dust fields)
+    pipe.read_hydro_descriptor()
     pipe.configparams.amrsource.rho = True
-    pipe.configparams.amrsource.dust = True
+    pipe.configparams.amrsource.dustratios = True
 
     # Simulation parameters
     pipe.configparams.sim.size_hole_au = 4.0
     pipe.configparams.sim.facc = 0.1
 
-    # Dust materials
-    dust = [
-        {"path": "/data/dust/silicate_d03.nk", "weight": 0.625},
-        {"path": "/data/dust/graphite.nk",     "weight": 0.375},
-    ]
+    # Dust model, shared by the opacity and imaging steps (SI units;
+    # see the Parameters reference, "Dust mixtures")
+    pipe.configparams.dust.mixtures = {
+        0: {
+            "silicate": {"path": "/data/dust/astrosil.nk", "distribution": "plaw",
+                         "fraction": 0.625, "density": 3500.0,
+                         "amin": 5e-9, "amax": 2.5e-7, "index": -3.5},
+            "graphite": {"path": "/data/dust/graphite.nk", "distribution": "plaw",
+                         "fraction": 0.375, "density": 2250.0,
+                         "amin": 5e-9, "amax": 2.5e-7, "index": -3.5},
+        },
+    }
+
+    # Observation
+    pipe.configparams.imaging.distance_pc = 140.0
+    pipe.configparams.imaging.wavelengths_mm = [0.87, 1.3, 3.0]
 
     # Load RAMSES (Step 1, same as basic pipeline)
     pipe.load_ramses()
@@ -108,7 +121,7 @@ Same as the basic pipeline — this only needs to run once:
 
 .. code-block:: python
 
-    pipe.run_polaris_opacity(dust_components=dust)
+    pipe.run_polaris_opacity()
 
 
 Step 4: Prepare RADMC-3D inputs
@@ -228,16 +241,15 @@ Render POLARIS dust emission images for each sink:
 .. code-block:: python
 
     pipe.render_images(
-        dust_components=dust,
         npix=256,
-        distance_pc=140.0,
-        wavelengths_mm=[0.87, 1.3, 3.0],
         subbox="all",
         fov_au=1000,     # 1000 AU wide image (±500 AU, matching the extraction)
         polaris_binary="/path/to/polaris",
     )
 
-The ``fov_au`` parameter sets the field of view in AU. It should match the
+The dust model and the distance come from ``configparams``; arguments given
+here override them for this call only. The ``fov_au`` parameter sets the field
+of view in AU (full width). It should match the
 ``box_au`` used for the RADMC-3D regrid so that density and intensity maps are
 directly comparable. The image is automatically centered on the sink via the
 POLARIS detector shift.
@@ -247,10 +259,7 @@ You can also render POLARIS images for a single or a set of chosen sinks:
 .. code-block:: python
 
     pipe.render_images(
-        dust_components=dust,
         npix=256,
-        distance_pc=140.0,
-        wavelengths_mm=[0.87, 1.3, 3.0],
         subbox=["sink_0026", "sink_0040"],
         fov_au=1000,     # 1000 AU wide image (±500 AU, matching the extraction)
         polaris_binary="/path/to/polaris",
@@ -261,9 +270,7 @@ For computing bolometric luminosities, render with a broader wavelength range:
 .. code-block:: python
 
     pipe.render_images(
-        dust_components=dust,
         npix=128,
-        distance_pc=140.0,
         wavelengths_mm=[
             0.001, 0.002, 0.005, 0.01, 0.02, 0.05,   # 1–50 µm
             0.07, 0.1, 0.16, 0.25, 0.45,               # 70–450 µm

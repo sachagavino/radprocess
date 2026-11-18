@@ -11,6 +11,9 @@ pipeline, grouped into four stages:
 #. :ref:`sec-params-radmc-convert` — converting the RAMSES output to RADMC-3D.
 #. :ref:`sec-params-render` — rendering synthetic images with POLARIS.
 
+The dust model is described in :ref:`sec-dust-mixtures` and the units of every
+physical parameter in :ref:`sec-params-units`.
+
 .. note::
 
    Parameters reach the pipeline through **two** mechanisms:
@@ -209,9 +212,10 @@ Simulation / physics (configuration)
 Extraction & grid controls (method arguments)
 ---------------------------------------------
 
-Passed to ``convert_to_radmc``, ``convert_to_polaris`` and
-``convert_subboxes``. Grid-layout options (``gridstyle``, ``coordsystem``)
-apply to RADMC-3D output only.
+Passed to ``convert_to_radmc`` (``gridstyle``, ``coordsystem``),
+``convert_to_polaris`` (``hole_au``) and ``convert_subboxes`` (all of them).
+Grid-layout options (``gridstyle``, ``coordsystem``) apply to RADMC-3D output
+only. ``convert_to_radmc`` always uses ``sim.size_hole_au``.
 
 .. list-table::
    :header-rows: 1
@@ -289,21 +293,248 @@ by both the opacity step (Stage 2) and rendering (Stage 4).
    * - ``mixtures``
      - dict
      - ``{}``
-     - Dust mixtures, ``{mixture_id: {component: {path, distribution, fraction, density, amin, amax, index}}}``. Required (grain sizes come from each component's ``amin``/``amax``/``distribution``).
+     - **Required.** Dust mixtures,
+       ``{mixture_id: {component_name: {path, distribution, fraction, density, amin, amax, index}}}``.
+       Fully described in :ref:`sec-dust-mixtures` below.
+   * - ``bin_edges``
+     - list of float or None
+     - ``None``
+     - [m] Grain-size bin edges (``n_bins + 1`` values, strictly increasing) over
+       which a *single* mixture is replicated when the grid holds several dust
+       density fields. If None, the edges are derived from the RAMSES
+       ``info_mf_XXXXX.txt`` file. Ignored when one mixture per field is given.
+   * - ``mie_nr_sizes``
+     - int or None
+     - ``None``
+     - Number of grain sizes (>= 2) at which POLARIS computes Mie cross sections
+       for each ``.nk`` component, log-spaced between the mixture's ``amin`` and
+       ``amax``. None = POLARIS default (100). No effect on tabulated
+       cross-section files. Requires a POLARIS build that knows
+       ``<mie_nr_dust_size>``.
    * - ``mean_molecular_weight``
      - float
      - ``2.37``
-     - Mean molecular weight (mu) of the gas.
+     - Mean molecular weight (mu) of the gas, written as POLARIS ``<mu>``.
+       Only used by POLARIS to turn the gas mass density into a gas number
+       density (e.g. for radiative-torque grain alignment); it does not change
+       the dust density.
    * - ``mass_fraction``
      - float
-     - ``1``
-     - Gas-to-dust mass ratio: 100 already applied during grid conversion (written as the POLARIS ``<mass_fraction>`` keyword).
+     - ``1.0``
+     - Written as POLARIS ``<mass_fraction>`` (dust-to-gas mass ratio).
+       **Has no effect on the dust density in Radprocess**: the POLARIS grid
+       already contains the dust mass density of every field, and POLARIS only
+       applies ``<mass_fraction>`` when it has to derive dust from gas. Leave it
+       at 1. The dust-to-gas ratio is set when the RAMSES output is loaded; see
+       :ref:`sec-dust-to-gas`.
 
-.. note::
+.. _sec-dust-mixtures:
 
-   Within a mixture, each component's ``fraction`` is its mass fraction *within
-   the dust* (the components of a mixture sum to 1). This is distinct from
-   ``mass_fraction`` above, which is the overall dust-to-gas ratio.
+Dust mixtures (``dust.mixtures``)
+---------------------------------
+
+The dust model is a dictionary of *mixtures*, each made of one or more
+*components* (materials). Radprocess writes every component as one POLARIS
+``<dust_component id = "mixture_id">`` line, so each entry maps one-to-one onto
+the POLARIS syntax (POLARIS manual, Sect. 3.6):
+
+.. code-block:: text
+
+   <dust_component id = "0"> "path" "distribution" fraction density amin amax index...
+
+Structure:
+
+.. code-block:: python
+
+   cfg.dust.mixtures = {
+       0: {                                   # mixture_id
+           "silicate": {                      # component_name
+               "path":         "/data/dust/astrosil.nk",
+               "distribution": "plaw",
+               "fraction":     0.625,
+               "density":      3500.0,        # kg/m^3
+               "amin":         5e-9,          # m
+               "amax":         2.5e-7,        # m
+               "index":        -3.5,
+           },
+           "graphite": {
+               "path":         "/data/dust/graphite.nk",
+               "distribution": "plaw",
+               "fraction":     0.375,
+               "density":      2250.0,
+               "amin":         5e-9,
+               "amax":         2.5e-7,
+               "index":        -3.5,
+           },
+       },
+   }
+
+Keys
+^^^^
+
+.. list-table::
+   :header-rows: 1
+   :widths: 16 12 12 60
+
+   * - Key
+     - Type
+     - Required
+     - Meaning, units and constraints
+   * - ``mixture_id``
+     - int
+     - yes
+     - Index of the mixture. POLARIS reads it as a non-negative **integer** and
+       pairs mixture *i* (in increasing id order) with dust density field *i*
+       of the grid. Use ``0, 1, ..., N-1``. A non-numeric id such as
+       ``"silicate"`` is read by POLARIS as 0 and silently merges mixtures.
+       With a single dust field use ``0``.
+   * - ``component_name``
+     - str
+     - yes
+     - Free label, used only for messages; not written to POLARIS. Must be
+       unique inside a mixture (it is a dict key).
+   * - ``path``
+     - str
+     - yes
+     - Absolute path to the optical data file. A path containing ``.nk`` is
+       read as a **refractive-index** file: POLARIS computes Mie cross sections
+       at any grain size. Any other file is read as a POLARIS **dust-parameter
+       file** with tabulated cross sections (``.cs`` / ``.dat``): its ``a_eff``
+       table fixes the allowed grain-size range.
+   * - ``distribution``
+     - str
+     - yes
+     - POLARIS size-distribution keyword, which sets how many ``index`` values
+       are needed: ``"plaw"`` (1), ``"plaw-ed"`` (4), ``"plaw-cv"`` (4),
+       ``"plaw-ed-cv"`` (7), ``"logn"`` (2), ``"zda"`` (14). See the table
+       below.
+   * - ``fraction``
+     - float
+     - yes
+     - Mass fraction of this material **within the mixture** (composition).
+       POLARIS divides each fraction by the sum of the fractions of its
+       mixture, so they are effectively normalised; write them so that they
+       sum to 1. This is unrelated to the dust-to-gas ratio.
+   * - ``density``
+     - float
+     - yes
+     - [kg/m\ :sup:`3`] Bulk (material) density of the grains, e.g. ~3000-3500
+       for silicates, ~2000-2250 for carbon. ``0`` = use the density stored in
+       the header of the optical data file. Sets the mass of one grain
+       (4/3 π a\ :sup:`3` ρ), hence the opacity per unit dust mass scales as
+       1/ρ.
+   * - ``amin``, ``amax``
+     - float
+     - yes [*]_
+     - [m] Minimum and maximum grain **radius** (not diameter), ``amin <=
+       amax``. For tabulated files they must lie inside the file's ``a_eff``
+       range. 1 µm = 1e-6 m. ``amin == amax`` gives a single grain size.
+   * - ``index``
+     - float or list of float
+     - yes
+     - Size-distribution parameter(s) ``p0, p1, ...`` (see below). A single
+       number for ``"plaw"``; a list with the exact number of parameters for
+       the other keywords.
+
+.. [*] Except when a single mixture is replicated over size bins (see
+   below): ``amin``/``amax`` are then ignored and set per bin.
+
+Size distributions
+^^^^^^^^^^^^^^^^^^
+
+``n(a) da`` is the number of grains with radius between ``a`` and ``a + da``,
+evaluated between ``amin`` and ``amax`` (sizes in metres):
+
+.. list-table::
+   :header-rows: 1
+   :widths: 14 36 50
+
+   * - Keyword
+     - n(a)
+     - ``index``
+   * - ``plaw``
+     - a\ :sup:`p0`
+     - ``p0``: exponent. ``-3.5`` = MRN (Mathis, Rumpl & Nordsieck 1977).
+       More negative = more mass in small grains.
+   * - ``plaw-ed``
+     - a\ :sup:`p0` · exp(-((a - p1)/p2)\ :sup:`p3`) for a > p1
+     - ``[p0, p1, p2, p3]``: exponent, turn-over radius [m], decay scale [m],
+       decay exponent.
+   * - ``plaw-cv``
+     - a\ :sup:`p0` · (1 + \|p2\| (a/p1)\ :sup:`p3`)\ :sup:`sign(p2)`
+     - ``[p0, p1, p2, p3]``.
+   * - ``logn``
+     - (1/a) · exp(-0.5 (ln(a/p0)/p1)\ :sup:`2`)
+     - ``[p0, p1]``: centroid radius [m] and width (both non-zero).
+   * - ``zda``
+     - Zubko, Dwek & Arendt (2004) form
+     - 14 parameters, see the POLARIS manual.
+
+Two ways to describe the dust
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The number of mixtures must match the number of dust density fields in the
+grid (one field for a single-fluid simulation or with ``sim.use_multi_grain =
+False``; one per dust bin for multi-grain / multi-fluid outputs):
+
+* **One mixture per field** (``len(mixtures) == n_fields``): used as written.
+  Each component needs ``amin`` and ``amax``. This is the single-field case and
+  any hand-built multi-field model.
+* **One template, replicated** (``len(mixtures) == 1`` and several fields): the
+  single mixture is copied once per size bin, with ``amin``/``amax`` replaced
+  by the bin edges from ``dust.bin_edges`` or, if None, from
+  ``info_mf_XXXXX.txt`` (bin edges are the geometric means of the RAMSES
+  ``mf_grain_size_i``). Within each bin, grains still follow
+  ``distribution``/``index``. For tabulated files, bins outside the table range
+  are clipped (a warning lists them). The RAMSES grain density is printed for
+  comparison with ``density``.
+
+Any other count raises an error before POLARIS runs.
+
+.. code-block:: python
+
+   # Multi-fluid output: one template, replicated over the RAMSES size bins
+   cfg.dust.mixtures = {
+       0: {"silicate": {"path": "/data/dust/astrosil.nk", "distribution": "plaw",
+                        "fraction": 1.0, "density": 3000.0, "index": -3.5}},
+   }
+   cfg.dust.mie_nr_sizes = 20      # narrow bins need fewer Mie sizes
+
+.. _sec-dust-to-gas:
+
+``fraction``, ``mass_fraction`` and the dust-to-gas ratio
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Three quantities with similar names act at different levels:
+
+``fraction`` (per component)
+    Composition: how the dust mass of one mixture is split between
+    materials. Changes the optical properties, not the amount of dust.
+
+Dust-to-gas mass ratio (amount of dust)
+    Fixed when the RAMSES output is loaded (``load_ramses``) and stored as dust
+    mass density in both grids:
+
+    * multi-grain output with ``amrsource.dustratios = True``: from the RAMSES
+      dust ratios, per bin;
+    * multi-fluid output with ``amrsource.fluiddens = True``: from the dust
+      fluid densities, per fluid;
+    * otherwise (or ``sim.use_multi_grain = False``): ``sim.dtogas`` × gas
+      density, one field.
+
+    Changing it requires re-running ``load_ramses`` and the conversions.
+
+``dust.mass_fraction`` (POLARIS ``<mass_fraction>``)
+    Would scale gas into dust in POLARIS, but POLARIS ignores it when the grid
+    contains dust densities, which is always the case in Radprocess. Leave it
+    at 1; it is not a physical input.
+
+.. warning::
+
+   ``nb_dust`` must be set before ``load_ramses`` for the dust ratios / fluids
+   to be read: call ``pipe.read_hydro_descriptor()`` (dust ratios) or
+   ``pipe.read_other_file_descriptor()`` (multi-fluid). Otherwise no per-bin
+   field is enabled and the run silently falls back to ``sim.dtogas``.
 
 POLARIS execution (configuration)
 ---------------------------------
@@ -371,6 +602,11 @@ Passed to ``run_polaris_opacity``. Arguments left as ``None`` fall back to the
      - bool
      - ``True``
      - If True, remove previous POLARIS run outputs before starting.
+   * - ``mie_nr_sizes``
+     - int or None
+     - ``None``
+     - Mie grain sizes per ``.nk`` component. Falls back to ``dust.mie_nr_sizes``.
+       Prefer the config: an override here must also be given to ``render_images``.
 
 The grid-writing step ``convert_to_polaris`` additionally accepts ``hole_au``
 (see Stage 1).
@@ -669,7 +905,13 @@ parameters are taken directly from ``cfg.imaging``.
    * - ``dust_mixtures``
      - dict or None
      - ``None``
-     - Dust definitions. If None, uses ``dust.mixtures``.
+     - Dust definitions. If None, uses ``dust.mixtures``. Must be the same as
+       for ``run_polaris_opacity``: prefer the config.
+   * - ``mie_nr_sizes``
+     - int or None
+     - ``None``
+     - Mie grain sizes per ``.nk`` component. Falls back to ``dust.mie_nr_sizes``.
+       Must match the opacity step.
    * - ``npix``
      - int or None
      - ``None``
@@ -686,14 +928,13 @@ parameters are taken directly from ``cfg.imaging``.
      - list or None
      - ``None``
      - Views to render. Falls back to ``imaging.views``.
-   * - ``fov_m``
-     - float or None
-     - ``None``
-     - [m] Field of view (full width). Overrides ``fov_au`` if set.
    * - ``fov_au``
      - float or None
      - ``None``
-     - [AU] Field of view. Falls back to ``imaging.fov_au``. For sub-boxes, match the RADMC-3D regrid box.
+     - [AU] Field of view (full width of the image). Falls back to
+       ``imaging.fov_au``. If both are None: the full grid extent for the
+       full cloud, and twice the requested ``box_half_width_au`` for
+       sub-boxes. For sub-boxes, match the RADMC-3D regrid box.
    * - ``label``
      - str
      - ``"whole"``
@@ -754,3 +995,61 @@ parameters are taken directly from ``cfg.imaging``.
      - None / str / list / "all"
      - ``None``
      - Which target to render: None (full cloud), a single sink, a list, or "all" sub-boxes.
+
+.. _sec-params-units:
+
+5. Units
+========
+
+Every physical parameter carries its unit in its name (``_au``, ``_pc``,
+``_mm``, ``_m``, ``_rsun``, ``_k``) or in its description. Radprocess converts
+these to what RADMC-3D (CGS) and POLARIS (SI) need; **dust-model values in**
+``dust.mixtures`` **and** ``dust.bin_edges`` **are written to POLARIS as they
+are, without conversion**, so they must already be in SI. A front end that
+asks for grain sizes in µm or densities in g/cm\ :sup:`3` must convert them
+itself before filling the configuration.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 16 54
+
+   * - Parameter
+     - Unit expected
+     - Conversion done by Radprocess
+   * - ``mixtures[..]["amin"]``, ``["amax"]``, ``dust.bin_edges``
+     - m (radius)
+     - None. µm → m: × 1e-6.
+   * - ``mixtures[..]["density"]``
+     - kg/m\ :sup:`3`
+     - None. g/cm\ :sup:`3` → kg/m\ :sup:`3`: × 1000.
+   * - ``mixtures[..]["index"]`` (``logn``, ``plaw-ed``, ``plaw-cv`` radii)
+     - m
+     - None.
+   * - ``sim.size_hole_au``, ``hole_au``, ``box_half_width_au``, ``isolation_radius_au``
+     - au
+     - au → cm (RADMC-3D) / m (POLARIS), internal.
+   * - ``imaging.distance_pc``
+     - pc
+     - pc → m, internal.
+   * - ``imaging.wavelengths_mm``
+     - mm
+     - mm → m, internal.
+   * - ``imaging.fov_au``
+     - au, full width
+     - au → m, internal.
+   * - ``imaging.acceptance_angle``
+     - deg
+     - Passed to POLARIS.
+   * - ``imaging.scat_source_radius_rsun``, ``scat_source_temp_k``
+     - R\ :sub:`☉`, K
+     - Passed to POLARIS.
+   * - ``radmc3d.wave_min``, ``wave_max``
+     - µm
+     - Passed to RADMC-3D (which works in µm).
+   * - ``sim.dtogas``, ``dust.mass_fraction``, ``mixtures[..]["fraction"]``
+     - dimensionless
+     - —
+   * - RAMSES fields (density, sizes in ``info_mf``)
+     - code / CGS units
+     - Read from the RAMSES output, converted internally (g/cm\ :sup:`3` →
+       kg/m\ :sup:`3` for POLARIS, cm → m for the bin edges).

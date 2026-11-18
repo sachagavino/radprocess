@@ -292,26 +292,32 @@ class DustConfig(StrictDataclass):
     ``dust_mixtures`` dict that used to be passed separately to both the opacity
     and the imaging steps (which risked the two disagreeing).
 
-    Expected ``mixtures`` structure::
+    Expected ``mixtures`` structure (all values SI, written to POLARIS as is)::
 
         mixtures = {
-            "<mixture_id>": {
-                "<component_name>": {
-                    "path": str,          # optical data file (.nk / .cs)
-                    "distribution": str,  # size distribution keyword, e.g. "plaw"
-                    "fraction": float,    # species mass fraction WITHIN the mixture
-                                          #   (components of a mixture sum to 1)
-                    "density": float,     # grain bulk density [kg/m^3]
+            <mixture_id>: {             # int 0..N-1, paired with dust density field i
+                "<component_name>": {   # free label, not written to POLARIS
+                    "path": str,          # optical data file: *.nk (Mie) or tabulated
+                    "distribution": str,  # "plaw", "plaw-ed", "plaw-cv", "plaw-ed-cv",
+                                          #   "logn" or "zda"
+                    "fraction": float,    # mass fraction WITHIN the mixture (composition);
+                                          #   POLARIS normalises them by their sum
+                    "density": float,     # grain bulk density [kg/m^3]; 0 = from the file
                     "amin": float,        # [m] minimum grain radius
                     "amax": float,        # [m] maximum grain radius
-                    "index": int | list,  # POLARIS size-distribution parameter(s)
+                    "index": float | list,  # size-distribution parameter(s), e.g. -3.5
+                                            #   for "plaw" (MRN); a list for the others
                 },
             },
         }
 
+    Full description: docs, Parameters reference > Dust mixtures.
+
     Note the distinction:
       * ``fraction`` (per component)  -> composition, splits dust among species.
-      * ``mass_fraction`` (below)     -> total dust-to-gas mass ratio (POLARIS <mass_fraction>).
+      * ``mass_fraction`` (below)     -> POLARIS <mass_fraction>; no effect here, because
+        the grid already holds dust densities (dust-to-gas is set by load_ramses from
+        the RAMSES dust fields or sim.dtogas).
 
     Several dust density fields (e.g. multi-fluid RAMSES outputs): mixture i is
     paired with dust density field i. Either define one mixture per field, or a
@@ -327,11 +333,12 @@ class DustConfig(StrictDataclass):
         metadata={'desc': r'Number of grain sizes POLARIS computes per dust component with Mie theory (.nk files; no effect on tabulated cross sections). Requires a POLARIS built with <mie_nr_dust_size>. If None, the POLARIS default (100) is used.'})
     mean_molecular_weight: float = field(default=2.37,
         metadata={'desc': r'Mean molecular weight (mu) of the gas.'})
-    # NOTE: default was inconsistent in the old code (1.0 in run_opacity vs 0.01 in
-    # the wrapper). Consolidated to the ISM-conventional dust-to-gas ratio 0.01.
-    # Change here if your setup expects a different value.
+    # NOTE: the POLARIS grid always contains dust mass densities (data ID 29), and
+    # POLARIS applies <mass_fraction> only when deriving dust from gas, so this value
+    # does not change the dust density. The dust-to-gas ratio is set at load_ramses
+    # (RAMSES dust ratios / fluids, or sim.dtogas). Keep it at 1.
     mass_fraction: float = field(default=1.,
-        metadata={'desc': r'Total dust-to-gas mass fraction (written as POLARIS <mass_fraction>).'})
+        metadata={'desc': r'POLARIS <mass_fraction>. No effect: the grid already holds dust densities (dust-to-gas is set by sim.dtogas or the RAMSES dust fields). Keep 1.'})
 
     def validate(self):
         if not self.mixtures:
