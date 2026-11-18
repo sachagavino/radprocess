@@ -10,7 +10,6 @@ import os
 import sys
 import re
 from collections import defaultdict
-import importlib
 from pathlib import Path
 
 import numpy as np
@@ -20,6 +19,7 @@ from zarr.codecs import BloscCodec
 import pymses
 from pymses.utils import constants as C
 from pymses.filters import CellsToPoints
+from pymses.etc.rcsetup import rcConfiguration
 
 from radprocess import radmc3d
 from radprocess import ramses
@@ -163,7 +163,10 @@ class Convert:
 
 
     def ramses(self, ramses_dir, ramses_num, ramses_out, source, sim_param, nb_species):
-        importlib.reload(pymses) # Reload pymses to clear internal caches. Another problem with Pymses.
+        # pymses reads pymsesrc once (at import) into a singleton; importlib.reload(pymses)
+        # does not clear it. Reset it so the pymsesrc written by set_pymsesrc() is used.
+        rcConfiguration._rcConfiguration__instance = None
+        pymses.rcConfig = rcConfiguration()
 
         print(f"\n=== New RAMSES Conversion ===")
         print(f"RAMSES Folder: {ramses_dir}")

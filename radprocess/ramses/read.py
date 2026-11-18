@@ -123,6 +123,61 @@ def other_file_descriptor(path):
     return nvar, variables, nb_fluids
 
 
+def mf_grain_sizes(path):
+    """
+    Parse the RAMSES multi-fluid info_mf_XXXXX.txt file.
+
+    Returns:
+        dict with
+            sizes_cm (ndarray): grain size of each fluid (mf_grain_size_i) [cm]
+            densities_gcc (ndarray): grain bulk density of each fluid (mf_grain_density_i) [g/cm^3]
+            filename (str): path of the parsed file
+        or None if no info_mf_*.txt file exists (not a multi-fluid output).
+    """
+
+    candidates = sorted(glob.glob(os.path.join(str(path), "info_mf_*.txt")))
+    if not candidates:
+        return None
+
+    filename = candidates[0]
+    entry_re = re.compile(r"^mf_grain_(size|density)_(\d+)\s*=\s*(\S+)")
+    values = {"size": {}, "density": {}}
+
+    with open(filename, "r") as f:
+        for line in f:
+            m = entry_re.match(line.strip())
+            if m:
+                kind, idx, val = m.groups()
+                # Fortran double-precision exponents (1.0d-3)
+                values[kind][int(idx)] = float(val.replace("d", "e").replace("D", "E"))
+
+    if not values["size"]:
+        raise RuntimeError(f"No mf_grain_size_* entries found in {filename}.")
+
+    order = sorted(values["size"])
+    return {
+        "sizes_cm": np.array([values["size"][i] for i in order]),
+        "densities_gcc": np.array([values["density"].get(i, np.nan) for i in order]),
+        "filename": filename,
+    }
+
+
+def namelist_value(path, key):
+    """Return the float value of `key` in the RAMSES namelist.txt of `path`, or None."""
+
+    filename = os.path.join(str(path), "namelist.txt")
+    if not os.path.isfile(filename):
+        return None
+
+    key_re = re.compile(rf"^{re.escape(key)}\s*=\s*([0-9.eEdD+-]+)", re.IGNORECASE)
+    with open(filename, "r") as f:
+        for line in f:
+            m = key_re.match(line.strip())
+            if m:
+                return float(m.group(1).replace("d", "e").replace("D", "E"))
+    return None
+
+
 
 from pathlib import Path
 import numpy as np

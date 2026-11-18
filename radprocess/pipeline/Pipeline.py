@@ -118,6 +118,18 @@ class Pipeline:
 
         return root
 
+    def get_nb_dust_fields(self):
+        """
+        Number of dust density fields in the AMR Zarr grid (= dust species
+        written to the POLARIS and RADMC-3D grids).
+        """
+        root = self.get_amr_root()
+        if "dust_massdensities" in root:
+            return root["dust_massdensities"].shape[1]
+        if "dust_massdensity" in root and len(root["dust_massdensity"].shape) > 1:
+            return root["dust_massdensity"].shape[1]
+        return 1
+
     def get_amr_fields(self):
         """
         Return available scalar/vector fields from AMR Zarr root.
@@ -511,6 +523,7 @@ class Pipeline:
         n_dust_override = None,
         polaris_binary = None,
         cleanup = True,
+        mie_nr_sizes = None,
     ):
         """
         Run POLARIS with 1 photon package to generate dust opacity tables.
@@ -543,6 +556,10 @@ class Pipeline:
             configparams.polaris.polaris_binary.
         cleanup : bool
             If True, remove previous POLARIS run outputs before starting.
+        mie_nr_sizes : int or None
+            Number of grain sizes per dust component for Mie theory (.nk files).
+            If None, uses configparams.dust.mie_nr_sizes. Prefer the config: an
+            override here must also be given to render_images().
 
         Returns
         -------
@@ -550,6 +567,7 @@ class Pipeline:
             Path to the POLARIS data/ directory containing dust_mixture_*.dat.
         """
         from radprocess.polaris.opacity import run_opacity
+        from radprocess.polaris.dustbins import resolve_dust_mixtures, check_mie_nr_sizes
 
         ramses_dir = self.configparams.dir.ramses_output
         polaris_dir = self.polaris_outputs_dir
@@ -563,12 +581,23 @@ class Pipeline:
         mass_fraction = _resolve(mass_fraction, dust.mass_fraction)
         nr_threads = _resolve(nr_threads, pc.nr_threads)
         polaris_binary = _resolve(polaris_binary, pc.polaris_binary)
+        mie_nr_sizes = _resolve(mie_nr_sizes, dust.mie_nr_sizes)
 
         if not dust_mixtures:
             raise ValueError(
                 "No dust mixtures available: set configparams.dust.mixtures "
                 "or pass dust_mixtures=... (see DustConfig for the structure)."
             )
+
+        check_mie_nr_sizes(mie_nr_sizes, dust_mixtures)
+
+        # One mixture per dust density field (multi-fluid: replicated over size bins)
+        dust_mixtures = resolve_dust_mixtures(
+            dust_mixtures,
+            _resolve(n_dust_override, self.get_nb_dust_fields()),
+            ramses_dir,
+            bin_edges = dust.bin_edges,
+        )
 
         # Auto-detect grid file if not provided
         if grid_path is None:
@@ -593,6 +622,7 @@ class Pipeline:
             n_dust_override = n_dust_override,
             polaris_binary = polaris_binary,
             cleanup = cleanup,
+            mie_nr_sizes = mie_nr_sizes,
         )
 
         return data_dir
@@ -1115,6 +1145,7 @@ class Pipeline:
         nr_photons_scat = None,
         source_star_scat = None,
         subbox = None,
+        mie_nr_sizes = None,
     ):
         """
         Run POLARIS dust emission/scattering imaging.
@@ -1128,6 +1159,9 @@ class Pipeline:
         ----------
         dust_mixtures : dict or None
             Dust material definitions. If None, uses configparams.dust.mixtures.
+        mie_nr_sizes : int or None
+            Number of grain sizes per dust component for Mie theory (.nk files).
+            If None, uses configparams.dust.mie_nr_sizes. Must match the opacity step.
         npix : int or None
             Image resolution (npix x npix pixels). If None, configparams.imaging.npix.
         distance_pc : float or None
@@ -1184,6 +1218,7 @@ class Pipeline:
             If subbox is set: {sink_name: {view_name: Path}}.
         """
         from radprocess.polaris.imaging import render_images
+        from radprocess.polaris.dustbins import resolve_dust_mixtures, check_mie_nr_sizes
 
         polaris_dir = self.polaris_outputs_dir
         img = self.configparams.imaging
@@ -1206,6 +1241,7 @@ class Pipeline:
         mass_fraction = _resolve(mass_fraction, dust.mass_fraction)
         nr_threads = _resolve(nr_threads, pc.nr_threads)
         polaris_binary = _resolve(polaris_binary, pc.polaris_binary)
+        mie_nr_sizes = _resolve(mie_nr_sizes, dust.mie_nr_sizes)
 
         # Imaging extras taken straight from config (no per-call override).
         custom_views = img.custom_views
@@ -1236,14 +1272,17 @@ class Pipeline:
             fov_m = fov_au * _au2m
 
         if n_dust is None:
-            root = self.get_amr_root()
-            if "dust_massdensities" in root:
-                n_dust = np.array(root["dust_massdensities"]).shape[1]
-            elif "dust_massdensity" in root:
-                arr = np.array(root["dust_massdensity"])
-                n_dust = arr.shape[1] if arr.ndim > 1 else 1
-            else:
-                n_dust = 1
+            n_dust = self.get_nb_dust_fields()
+
+        # Same mixtures as the opacity step (multi-fluid: replicated over size bins)
+        dust_mixtures = resolve_dust_mixtures(
+            dust_mixtures,
+            n_dust,
+            self.configparams.dir.ramses_output,
+            bin_edges = dust.bin_edges,
+            verbose = False,
+        )
+        check_mie_nr_sizes(mie_nr_sizes, dust_mixtures, verbose = False)
 
         root = self.get_amr_root()
         output_num = int(root.attrs.get("ramses_output_num", 0))
@@ -1287,6 +1326,7 @@ class Pipeline:
                 source_star_scat = source_star_scat,
                 scat_source_radius_rsun = scat_source_radius_rsun,
                 scat_source_temp_k = scat_source_temp_k,
+                mie_nr_sizes = mie_nr_sizes,
             )
 
         # ---- Subbox case ----
@@ -1389,6 +1429,7 @@ class Pipeline:
                 scat_source_radius_rsun = scat_source_radius_rsun,
                 scat_source_temp_k = scat_source_temp_k,
                 detector_shift_m = sink_offset_m,
+                mie_nr_sizes = mie_nr_sizes,
             )
 
             all_results[name] = image_dirs

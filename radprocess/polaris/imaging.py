@@ -74,6 +74,7 @@ def write_imaging_cmd(
     scat_source_radius_rsun = 1.0,
     scat_source_temp_k = 5000.0,
     detector_shift_m = None,
+    mie_nr_sizes = None,
 ):
     """
     Write a POLARIS command file for dust continuum imaging at a
@@ -109,6 +110,9 @@ def write_imaging_cmd(
         Source distance in parsecs.
     wavelengths_mm : list of float
         Wavelengths to image, in millimetres.
+    mie_nr_sizes : int or None
+        Number of grain sizes per component for Mie theory (.nk files), written
+        as <mie_nr_dust_size>. If None, the line is omitted (POLARIS default).
     nr_threads : int
         Number of OpenMP threads.
     midplane_zoom : int or float
@@ -189,6 +193,8 @@ def write_imaging_cmd(
                     )
 
         f.write(f"\n\n\t<nr_threads> {nr_threads}\n")
+        if mie_nr_sizes is not None:
+            f.write(f"\n\t<mie_nr_dust_size> {mie_nr_sizes}\n")
         f.write("\n</common>\n")
 
         # --- <task> block ---
@@ -328,6 +334,7 @@ def render_images(
     scat_source_radius_rsun = 1.0,
     scat_source_temp_k = 5000.0,
     detector_shift_m = None,
+    mie_nr_sizes = None,
 ):
     """
     Full Step 8: write POLARIS imaging command files and execute them
@@ -377,6 +384,9 @@ def render_images(
         Subdirectory label ("whole" or "inner").
     cleanup_views : bool
         If True, remove previous image output for each view before rendering.
+    mie_nr_sizes : int or None
+        Number of grain sizes per component for Mie theory (.nk files). Must match
+        the opacity step. If None, the POLARIS default is used.
 
     Returns
     -------
@@ -452,6 +462,7 @@ def render_images(
             scat_source_radius_rsun = scat_source_radius_rsun,
             scat_source_temp_k = scat_source_temp_k,
             detector_shift_m = detector_shift_m,
+            mie_nr_sizes = mie_nr_sizes,
         )
 
         # Run POLARIS

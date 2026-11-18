@@ -203,6 +203,7 @@ def write_opacity_cmd(
     mass_fraction = 1,
     nr_threads = 1,
     output_num = 0,
+    mie_nr_sizes = None,
 ):
     """
     Write a POLARIS command file for the opacity-only run.
@@ -241,6 +242,9 @@ def write_opacity_cmd(
         Number of OpenMP threads for POLARIS.
     output_num : int
         RAMSES output number (used only for naming).
+    mie_nr_sizes : int or None
+        Number of grain sizes per component for Mie theory (.nk files), written
+        as <mie_nr_dust_size>. If None, the line is omitted (POLARIS default).
     """
     cmd_path = Path(cmd_path)
     cmd_path.parent.mkdir(parents=True, exist_ok=True)
@@ -282,6 +286,8 @@ def write_opacity_cmd(
                     )
 
         f.write(f"\n\n\t<nr_threads> {nr_threads}\n")
+        if mie_nr_sizes is not None:
+            f.write(f"\n\t<mie_nr_dust_size> {mie_nr_sizes}\n")
         f.write("\n</common>\n")
 
         # --- <task> block ---
@@ -336,6 +342,9 @@ def run_polaris(cmd_path, log_path=None, polaris_binary="polaris"):
     ------
     subprocess.CalledProcessError
         If POLARIS exits with a nonzero return code.
+    RuntimeError
+        If the POLARIS binary does not support <mie_nr_dust_size>: it only warns
+        about unknown commands, and would silently keep its default number of sizes.
     """
     cmd_path = Path(cmd_path)
     command = [polaris_binary, str(cmd_path)]
@@ -353,6 +362,7 @@ def run_polaris(cmd_path, log_path=None, polaris_binary="polaris"):
     )
 
     log_file = open(log_path, "w") if log_path else None
+    unsupported_mie_sizes = False
 
     try:
         for line in process.stdout:
@@ -360,11 +370,21 @@ def run_polaris(cmd_path, log_path=None, polaris_binary="polaris"):
             sys.stdout.flush()
             if log_file:
                 log_file.write(line.rstrip("\r\n") + "\n")
+            if "Unknown command <mie_nr_dust_size>" in line:
+                unsupported_mie_sizes = True
+                process.kill()
+                break
     finally:
         if log_file:
             log_file.close()
 
     process.wait()
+    if unsupported_mie_sizes:
+        raise RuntimeError(
+            f"{polaris_binary} does not support <mie_nr_dust_size>. Set "
+            "configparams.polaris.polaris_binary to a POLARIS built with it, or "
+            "set configparams.dust.mie_nr_sizes = None."
+        )
     if process.returncode != 0:
         raise subprocess.CalledProcessError(process.returncode, command)
 
@@ -389,6 +409,7 @@ def run_opacity(
     n_dust_override = None,
     polaris_binary = "polaris",
     cleanup = True,
+    mie_nr_sizes = None,
 ):
     """
     Full Step 4: derive stellar properties, write the POLARIS command file,
@@ -424,6 +445,9 @@ def run_opacity(
         Name or path to the POLARIS executable.
     cleanup : bool
         If True, remove data/, plots/, grid_temp.dat from a previous run.
+    mie_nr_sizes : int or None
+        Number of grain sizes per component for Mie theory (.nk files).
+        If None, the POLARIS default is used.
 
     Returns
     -------
@@ -472,7 +496,8 @@ def run_opacity(
         mean_molecular_weight = mean_molecular_weight,
         mass_fraction = mass_fraction,
         nr_threads = nr_threads,
-        output_num = output_num
+        output_num = output_num,
+        mie_nr_sizes = mie_nr_sizes,
     )
 
     # 5) Cleanup previous run

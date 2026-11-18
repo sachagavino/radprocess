@@ -312,9 +312,19 @@ class DustConfig(StrictDataclass):
     Note the distinction:
       * ``fraction`` (per component)  -> composition, splits dust among species.
       * ``mass_fraction`` (below)     -> total dust-to-gas mass ratio (POLARIS <mass_fraction>).
+
+    Several dust density fields (e.g. multi-fluid RAMSES outputs): mixture i is
+    paired with dust density field i. Either define one mixture per field, or a
+    single mixture without amin/amax: it is then replicated over the size bins
+    (from ``bin_edges``, or from info_mf_XXXXX.txt if None), each bin clipped to
+    the grain-size range of tabulated cross-section files.
     """
     mixtures: dict = field(default_factory=dict,
         metadata={'desc': r'Dust mixtures {mixture_id: {component: {path, distribution, fraction, density, amin, amax, index}}}. Required; see class docstring.'})
+    bin_edges: Optional[list] = field(default=None,
+        metadata={'desc': r'[m] Dust size-bin edges (n_bins + 1) over which a single mixture is replicated. If None, read from info_mf_XXXXX.txt (multi-fluid outputs).'})
+    mie_nr_sizes: Optional[int] = field(default=None,
+        metadata={'desc': r'Number of grain sizes POLARIS computes per dust component with Mie theory (.nk files; no effect on tabulated cross sections). Requires a POLARIS built with <mie_nr_dust_size>. If None, the POLARIS default (100) is used.'})
     mean_molecular_weight: float = field(default=2.37,
         metadata={'desc': r'Mean molecular weight (mu) of the gas.'})
     # NOTE: default was inconsistent in the old code (1.0 in run_opacity vs 0.01 in
