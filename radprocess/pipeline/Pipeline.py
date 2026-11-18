@@ -1128,7 +1128,6 @@ class Pipeline:
         distance_pc = None,
         wavelengths_mm = None,
         views = None,
-        fov_m = None,
         fov_au = None,
         label = "whole",
         grid_path = None,
@@ -1172,8 +1171,6 @@ class Pipeline:
         views : list of str or None
             Viewing angles (subset of ["xy", "xz", "yz"]). If None,
             configparams.imaging.views.
-        fov_m : float or None
-            Field of view in metres (full width). Overrides fov_au if set.
         fov_au : float or None
             Field of view in AU (full width). If None, configparams.imaging.fov_au.
             For subboxes, use the same value as the RADMC-3D regrid box_au.
@@ -1265,9 +1262,10 @@ class Pipeline:
                 "or pass wavelengths_mm=..."
             )
 
-        # Honour a config/argument fov_au in the full-cloud path too (the
-        # subbox path handles fov_au/fov_m itself further below).
-        if fov_m is None and fov_au is not None:
+        # POLARIS expects the full-cloud FOV in metres (the subbox path
+        # converts fov_au itself further below).
+        fov_m = None
+        if fov_au is not None:
             from radprocess.constants.constants import au2m as _au2m
             fov_m = fov_au * _au2m
 
@@ -1387,8 +1385,6 @@ class Pipeline:
             from radprocess.constants.constants import au2m as _au2m
             if fov_au is not None:
                 subbox_fov_m = fov_au * _au2m
-            elif fov_m is not None:
-                subbox_fov_m = fov_m
             else:
                 # Fall back to the requested half-width from extraction
                 fov_file = polaris_sink_dir / "requested_hw_au.txt"
