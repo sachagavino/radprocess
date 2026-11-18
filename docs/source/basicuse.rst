@@ -23,7 +23,7 @@ Start by importing the ``Pipeline`` class and creating an instance:
 Pointing to the data
 --------------------
 
-You can visualize the full accessible parameter list by typing:
+The user can visualize the full accessible parameter list by typing:
 
 .. code-block:: python
 
@@ -35,7 +35,7 @@ working directory where radprocess will write all intermediate and final files.
 .. code-block:: python
 
     # RAMSES simulation output
-    pipe.configparams.dir.ramses_output = "/data/outputs/Mass500/output_00940/"
+    pipe.configparams.dir.ramses_output = "/data/outputs/Mass500_SFE01/output_00940/"
 
     # Working directory (created automatically with subdirectories)
     pipe.configparams.dir.pipeline_output = "/data/postprocessing/M500_SFE01/"
@@ -146,7 +146,7 @@ In that case, the user can specify which POLARIS binary to use:
 
 .. code-block:: python
 
-    pipe.configparams.polaris.polaris_binary = "/data/pebbles/scratch/sacha/softwares/polaris_mie/bin/polaris"
+    pipe.configparams.polaris.polaris_binary = "/softwares/polaris/bin/polaris"
 
 Defining the observation
 ------------------------
