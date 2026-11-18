@@ -139,7 +139,7 @@ Contact the developers for more information.
 
 
 Setting the polaris binary (optional)
-------------------------
+-------------------------------------
 
 In some cases, the user may need to use a specific POLARIS version that is not the default installed on the machine.
 In that case, the user can specify which POLARIS binary to use:
