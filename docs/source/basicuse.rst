@@ -51,14 +51,16 @@ Inspect the RAMSES output before running the pipeline. Reading the file
 descriptors is **not optional** for simulations that includes multiple dust bins: it sets
 ``configparams.nb_dust``, the number of dust ratios / fluids that
 ``load_ramses`` will read. Without it the dust fields are skipped and the dust
-density falls back to ``sim.dtogas`` × gas density.
+density falls back to ``sim.dtogas`` × gas density. 
+The user can still manually set ``configparams.nb_dust``.
+In case of multi-fluid RAMSES model, the **order matters**:
 
 .. code-block:: python
 
     # Hydro variables; sets nb_dust from the dust ratios (dust ratio models are deprecated)
     print(pipe.read_hydro_descriptor())
 
-    # Multi-fluid outputs only: sets nb_dust from the number of fluids
+    # Multi-fluid outputs only. Sets nb_dust from the number of fluids (always call it AFTER pipe.read_hydro_descriptor())
     print(pipe.read_other_file_descriptor())
 
     # List sinks (protostars)

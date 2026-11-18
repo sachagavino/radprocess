@@ -209,6 +209,20 @@ Simulation / physics (configuration)
    is bookkeeping for the number of dust species and is populated during
    conversion.
 
+.. note::
+
+   **Why** ``use_multi_grain`` **exists.** A multi-fluid RAMSES output carries
+   several dust fluids (one per grain size). It can still be useful to ignore
+   them, for example to compare a multi-fluid model with a single-population
+   one. With ``use_multi_grain = False``, the fluids are skipped and a single
+   dust population is used, with density ``sim.dtogas`` × gas density.
+
+   The switch is applied by ``load_ramses`` (Step 1): changing it requires
+   re-running the pipeline from Step 1. Use a separate ``dir.pipeline_output``
+   for each setting to keep both versions on disk. In a comparison, set
+   ``sim.dtogas`` to the total dust-to-gas ratio of the RAMSES output, so that
+   only the size distribution differs and not the dust mass. 
+
 Extraction & grid controls (method arguments)
 ---------------------------------------------
 

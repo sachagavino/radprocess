@@ -131,7 +131,7 @@ class Convert:
             root.create_array(
                 "fluid_velocity",
                 data=arr,
-                chunks=(50_000, 3),
+                chunks=(50_000, arr.shape[1], 3),
                 compressors=[compressor],
             )
 
@@ -347,6 +347,13 @@ class Convert:
         # #---FLUID VELOCITY SECTION:---
         # if has_fluid_v:
         #     output['fluid_v'] = fluid_cells['fluid_v']
+        # Convert.ramses, replacing the commented "FLUID VELOCITY SECTION"
+        if has_fluid_v:
+            unit_v = snap.info["unit_velocity"].express(C.m / C.s)
+            output["fluid_v"] = np.stack(
+                [fluid_cells[f"fluid_v_{i}"] for i in range(1, nb_species + 1)],
+                axis=1,
+            ) * unit_v                                    # (N_cells, nb_species, 3) in m/s
 
         #---TEMPERATURE SECTION:---
         if has_temp:
