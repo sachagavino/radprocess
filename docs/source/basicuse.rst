@@ -395,10 +395,13 @@ Putting it all together:
 
     # AMR fields to extract (sets nb_dust first)
     pipe.read_hydro_descriptor()
-    cfg.amrsource.dustratios = True
+    cfg.amrsource.fluiddens = True (only if RAMSES has multi-fluid)
+    cgf.amrsource.vel = True         # velocity (optional)
+    cgf.amrsource.p = True           # pressure (optional)
+    cgf.amrsource.temp = True        # temperature (requires pressure)
 
     # Simulation parameters
-    cfg.sim.size_hole_au = 4.0
+    cfg.sim.size_hole_au = 1.0
     cfg.sim.facc = 0.5
 
     # Dust model (SI units). With several dust bins, this single mixture is
