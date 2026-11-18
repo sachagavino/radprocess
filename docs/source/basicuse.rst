@@ -23,6 +23,12 @@ Start by importing the ``Pipeline`` class and creating an instance:
 Pointing to the data
 --------------------
 
+You can visualize the full accessible parameter list by typing:
+
+.. code-block:: python
+
+    pipe.configparams
+
 Two paths must be set before anything else: the RAMSES output directory and a
 working directory where radprocess will write all intermediate and final files.
 
@@ -42,14 +48,14 @@ Inspecting the simulation
 --------------------------
 
 Inspect the RAMSES output before running the pipeline. Reading the file
-descriptors is **not optional** for dusty simulations: it sets
+descriptors is **not optional** for simulations that includes multiple dust bins: it sets
 ``configparams.nb_dust``, the number of dust ratios / fluids that
 ``load_ramses`` will read. Without it the dust fields are skipped and the dust
 density falls back to ``sim.dtogas`` × gas density.
 
 .. code-block:: python
 
-    # Hydro variables; sets nb_dust from the dust ratios
+    # Hydro variables; sets nb_dust from the dust ratios (dust ratio models are deprecated)
     print(pipe.read_hydro_descriptor())
 
     # Multi-fluid outputs only: sets nb_dust from the number of fluids
@@ -68,13 +74,13 @@ density is always read; enable the dust field that matches your simulation:
 .. code-block:: python
 
     pipe.configparams.amrsource.rho = True          # gas density (always on)
-    pipe.configparams.amrsource.dustratios = True   # multi-grain dust ratios
-    # pipe.configparams.amrsource.fluiddens = True  # multi-fluid dust densities
+    # pipe.configparams.amrsource.dustratios = True # multi-grain dust ratios (deprecated)
+    pipe.configparams.amrsource.fluiddens = True    # multi-fluid dust densities (optional)
     pipe.configparams.amrsource.vel = False         # velocity (optional)
     pipe.configparams.amrsource.p = False           # pressure (optional)
     pipe.configparams.amrsource.temp = False        # temperature (requires pressure)
 
-For a simulation without dust fields, leave both off: the dust density is
+For a simulation without dust fields, the dust density is
 ``sim.dtogas`` (default 0.01) times the gas density.
 
 
@@ -83,7 +89,8 @@ Defining the dust model
 
 The dust model is set once in ``pipe.configparams.dust`` and used by both
 POLARIS steps (opacities in Step 4, images in Step 8), so the two cannot
-disagree. ``dust.mixtures`` is a dictionary of mixtures, each made of one or
+disagree (this might change in the future). 
+``dust.mixtures`` is a dictionary of mixtures, each made of one or
 more materials:
 
 .. code-block:: python
@@ -117,12 +124,29 @@ single mixture can instead be replicated over the size bins. Every key, the
 supported size distributions, and the difference between ``fraction`` and the
 dust-to-gas ratio are described in :ref:`sec-dust-mixtures`.
 
-With ``.nk`` (refractive index) files, POLARIS computes Mie cross sections at
-``dust.mie_nr_sizes`` grain sizes per component (default 100):
+With ``.nk`` (refractive index) files, POLARIS computes Mie cross-sections at
+``dust.mie_nr_sizes`` grain sizes per bin (default 100):
 
 .. code-block:: python
 
     pipe.configparams.dust.mie_nr_sizes = 50
+
+IMPORTANT: Changing this parameter will work only with a specific version of POLARIS. 
+This is particularly useful in multi-fluid mode (a multi-fluid RAMSES output) that 
+carries many dust bins. POLARIS will compute Mie cross-sections for 100 grain sizes per bin with the default value, which can require huge memory.
+Therefore the user may want to decrease this value in multi-fluid mode. 
+Contact the developers for more information.
+
+
+Setting the polaris binary (optional)
+------------------------
+
+In some cases, the user may need to use a specific POLARIS version that is not the default installed on the machine.
+In that case, the user can specify which POLARIS binary to use:
+
+.. code-block:: python
+
+    pipe.configparams.polaris.polaris_binary = "/data/pebbles/scratch/sacha/softwares/polaris_mie/bin/polaris"
 
 Defining the observation
 ------------------------
@@ -306,7 +330,7 @@ the steps you need:
 
     pipe = Pipeline()
     cfg = pipe.configparams
-    cfg.dir.ramses_output = "/data/outputs/Mass500/output_00940/"
+    cfg.dir.ramses_output = "/data/outputs/Mass500_SFE01/output_00940/"
     cfg.dir.pipeline_output = "/data/postprocessing/M500_SFE01/"   # same as before
     cfg.dust.mixtures = {...}
     cfg.imaging.distance_pc = 140.0
